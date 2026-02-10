@@ -26,6 +26,7 @@ All notable changes to the WebRTC Call Center project will be documented in this
   - Dynamic "Active Call" vs "Idle" states.
   - Visual Feedback for Mute, Hold, and Connection Status.
   - Timer for active calls.
+- **Blind Transfer:** Added UI button and SIP REFER logic to transfer calls immediately to another extension.
 
 ### Fixed
 - Fixed critical bug where "Incoming" modal blocked the "Active Call" controls.

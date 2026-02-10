@@ -163,6 +163,16 @@ document.getElementById('btnHold').addEventListener('click', async () => {
     ui.btnHold.classList.toggle('active', isHeld);
 });
 
+// --- Transfer Logic ---
+document.getElementById('btnTransfer').addEventListener('click', () => {
+    const num = prompt("Enter extension to transfer to:");
+    if (num) {
+        phone.blindTransfer(num).then(success => {
+            if(success) console.log("Transfer initiated...");
+        });
+    }
+});
+
 document.getElementById('btnShowConfig').addEventListener('click', () => ui.panels.config.classList.remove('hidden'));
 document.getElementById('btnCloseConfig').addEventListener('click', () => ui.panels.config.classList.add('hidden'));
 document.getElementById('btnLogin').addEventListener('click', () => phone.connect());

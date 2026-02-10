@@ -238,4 +238,41 @@ export class PhoneEngine {
             return this.isHeld; 
         }
     }
+
+// --- ADDED: Blind Transfer ---
+async blindTransfer(targetNumber) {
+    if (!this.isCallActive()) return false;
+
+    console.log(`Attempting Blind Transfer to: ${targetNumber}`);
+    const target = SIP.UserAgent.makeURI(`sip:${targetNumber}@${this.settings.get('domain')}`);
+
+    if (!target) {
+        console.error("Invalid Transfer Target");
+        return false;
+    }
+
+    // SIP REFER method (Standard Blind Transfer)
+    const options = {
+        requestDelegate: {
+            onAccept: () => {
+                console.log("Transfer Accepted");
+                this.cleanupCall(); // End our side of the call
+            },
+            onReject: (response) => {
+                console.warn("Transfer Rejected", response);
+                alert("Transfer Failed: " + response.reasonPhrase);
+            }
+        }
+    };
+
+    try {
+        // "refer" sends the caller to the new target
+        await this.session.refer(target, options);
+        return true;
+    } catch (e) {
+        console.error("Transfer Exception", e);
+        return false;
+    }
+}
+
 }
