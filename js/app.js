@@ -173,6 +173,30 @@ document.getElementById('btnTransfer').addEventListener('click', () => {
     }
 });
 
+// --- Warm Transfer Logic ---
+const consultControls = document.getElementById('consultControls');
+
+document.getElementById('btnConsult').addEventListener('click', () => {
+    const num = prompt("Enter number to consult:");
+    if (num) {
+        phone.startConsultation(num).then(() => {
+            // Show the "Complete / Cancel" overlay
+            consultControls.classList.remove('hidden');
+        }).catch(err => alert("Consult failed: " + err));
+    }
+});
+
+document.getElementById('btnCompleteTransfer').addEventListener('click', () => {
+    phone.completeConsultation();
+    consultControls.classList.add('hidden');
+});
+
+document.getElementById('btnCancelConsult').addEventListener('click', () => {
+    phone.cancelConsultation();
+    consultControls.classList.add('hidden');
+    // Note: The original call is still on hold. Agent must click "Resume" manually.
+});
+
 document.getElementById('btnShowConfig').addEventListener('click', () => ui.panels.config.classList.remove('hidden'));
 document.getElementById('btnCloseConfig').addEventListener('click', () => ui.panels.config.classList.add('hidden'));
 document.getElementById('btnLogin').addEventListener('click', () => phone.connect());

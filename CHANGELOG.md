@@ -27,6 +27,7 @@ All notable changes to the WebRTC Call Center project will be documented in this
   - Visual Feedback for Mute, Hold, and Connection Status.
   - Timer for active calls.
 - **Blind Transfer:** Added UI button and SIP REFER logic to transfer calls immediately to another extension.
+- **Blind Transfer:** Added UI button and to warm transfer calls to PSTN.
 
 ### Fixed
 - Fixed critical bug where "Incoming" modal blocked the "Active Call" controls.

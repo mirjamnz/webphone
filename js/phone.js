@@ -275,4 +275,96 @@ async blindTransfer(targetNumber) {
     }
 }
 
+// --- ADDED: Warm / Attended Transfer ---
+
+    // 1. Place current call on hold and dial the colleague
+    async startConsultation(targetNumber) {
+        if (!this.isCallActive()) return false;
+
+        console.log(`Starting consultation with: ${targetNumber}`);
+
+        // Step A: Hold the current customer
+        if (!this.isHeld) {
+            await this.toggleHold(); 
+        }
+
+        // Step B: Dial the colleague (Consult Session)
+        const domain = this.settings.get('domain');
+        const target = SIP.UserAgent.makeURI(`sip:${targetNumber}@${domain}`);
+        
+        // Use same audio constraints
+        const micId = this.settings.get('micId');
+        const constraints = { 
+            audio: micId && micId !== 'default' ? { deviceId: { exact: micId } } : true,
+            video: false 
+        };
+
+        // Create the NEW session (Consult)
+        const inviter = new SIP.Inviter(this.userAgent, target, {
+            sessionDescriptionHandlerOptions: { constraints }
+        });
+
+        this.consultSession = inviter; // Store it separately
+
+        // Handle the Consult Session events
+        this.consultSession.stateChange.addListener((state) => {
+            console.log("Consult Session State:", state);
+            if (state === SIP.SessionState.Established) {
+                // Switch Audio to the Colleague
+                this.setupRemoteMedia(this.consultSession);
+            }
+            if (state === SIP.SessionState.Terminated) {
+                this.consultSession = null;
+                // If colleague hangs up, we should probably unhold the customer?
+                // For now, we let the agent do it manually.
+            }
+        });
+
+        return inviter.invite();
+    }
+
+    // 2. Complete the transfer (Connect Customer to Colleague)
+    async completeConsultation() {
+        if (!this.session || !this.consultSession) {
+            console.error("Cannot complete transfer: sessions missing");
+            return false;
+        }
+
+        // We use REFER to tell Customer (session) to talk to Colleague (consultSession)
+        const target = this.consultSession.remoteIdentity.uri;
+        
+        try {
+            // Refer Customer to Colleague
+            await this.session.refer(target);
+            
+            // Hangup our leg with Colleague (Customer takes over)
+            this.consultSession.bye(); 
+            this.cleanupCall(); // End our session
+            return true;
+        } catch (e) {
+            console.error("Warm Transfer Failed", e);
+            return false;
+        }
+    }
+
+    // 3. Cancel the consult (Hangup Colleague, go back to Customer)
+    async cancelConsultation() {
+        if (this.consultSession) {
+            // Hangup colleague
+            switch(this.consultSession.state) {
+                case SIP.SessionState.Established:
+                    this.consultSession.bye();
+                    break;
+                default:
+                    this.consultSession.cancel();
+            }
+            this.consultSession = null;
+        }
+
+        // Switch audio back to Customer (but keep them on Hold until agent clicks Resume)
+        if (this.session && this.session.state === SIP.SessionState.Established) {
+            this.setupRemoteMedia(this.session);
+        }
+    }
+
 }
