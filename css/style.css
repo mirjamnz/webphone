@@ -180,7 +180,6 @@ input[type="text"], input[type="password"] {
     padding: 20px;
     border-radius: 16px;
 }
-.modal-overlay.hidden { display: none; }
 
 .config-scroll-area {
     overflow-y: auto;
@@ -286,8 +285,25 @@ input[type="text"], input[type="password"] {
     align-items: center;
     justify-content: center;
     transition: all 0.2s;
+    background: #334155; /* Default background */
 }
-.ctrl-btn.mute { background: #334155; }
-.ctrl-btn.mute.active { background: var(--warning); color: black; }
-.ctrl-btn.hold { background: #334155; }
-.ctrl-
+
+/* Force colors to override default background */
+.ctrl-btn.mute.active { background: var(--warning) !important; color: black; }
+.ctrl-btn.hold.active { background: var(--warning) !important; color: black; }
+
+/* HANGUP BUTTON FIX: Force Red Color */
+.ctrl-btn.hangup { 
+    background: var(--danger) !important; 
+    width: 60px; 
+    height: 60px; 
+    font-size: 1.5rem; 
+}
+
+/* --- UTILITY: FORCE HIDE --- */
+.hidden {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important; 
+}

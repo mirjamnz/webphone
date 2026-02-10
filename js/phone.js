@@ -2,14 +2,15 @@ import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
 export class PhoneEngine {
     constructor(config, settings, audioManager, callbacks) {
-        this.config = config;         // Static config
-        this.settings = settings;     // User settings
-        this.audio = audioManager;    // Audio controller
-        this.callbacks = callbacks;   // UI callbacks (onStatus, onCall, etc)
+        this.config = config;         
+        this.settings = settings;     
+        this.audio = audioManager;    
+        this.callbacks = callbacks;   
         
         this.userAgent = null;
         this.session = null;
         this.registerer = null;
+        this.isHeld = false; // Track hold state locally
     }
 
     async connect() {
@@ -48,10 +49,8 @@ export class PhoneEngine {
 
         await this.userAgent.start();
         
-        // Setup Registration
         this.registerer = new SIP.Registerer(this.userAgent);
         this.registerer.stateChange.addListener((state) => {
-            // SIP.js states: Initial, Registered, Unregistered, Terminated
             this.callbacks.onStatus(state);
         });
         
@@ -73,7 +72,6 @@ export class PhoneEngine {
         const domain = this.settings.get('domain');
         const target = SIP.UserAgent.makeURI(`sip:${targetNumber}@${domain}`);
         
-        // Audio Constraints (Microphone Selection)
         const micId = this.settings.get('micId');
         const constraints = { 
             audio: micId && micId !== 'default' ? { deviceId: { exact: micId } } : true,
@@ -89,7 +87,6 @@ export class PhoneEngine {
     }
 
     handleIncoming(invitation) {
-        // If already in a call, reject busy
         if (this.session) {
             invitation.reject({ statusCode: 486 });
             return;
@@ -98,10 +95,8 @@ export class PhoneEngine {
         const callerName = invitation.remoteIdentity.uri.user;
         this.audio.startRinging();
 
-        // Trigger UI Popup
         this.callbacks.onIncoming(callerName, 
-            // Accept Action
-            () => {
+            () => { // Accept
                 this.audio.stopRinging();
                 const micId = this.settings.get('micId');
                 const constraints = { 
@@ -111,8 +106,7 @@ export class PhoneEngine {
                 invitation.accept({ sessionDescriptionHandlerOptions: { constraints } });
                 this.setupSession(invitation);
             },
-            // Reject Action
-            () => {
+            () => { // Reject
                 this.audio.stopRinging();
                 invitation.reject();
             }
@@ -121,6 +115,7 @@ export class PhoneEngine {
 
     setupSession(session) {
         this.session = session;
+        this.isHeld = false; // Reset hold state
         const remoteUser = session.remoteIdentity.uri.user;
         
         this.callbacks.onCallStart(remoteUser);
@@ -139,17 +134,16 @@ export class PhoneEngine {
     setupRemoteMedia(session) {
         const pc = session.sessionDescriptionHandler.peerConnection;
         const remoteStream = new MediaStream();
-        
         pc.getReceivers().forEach((receiver) => {
             if (receiver.track) remoteStream.addTrack(receiver.track);
         });
-        
         this.audio.setCallStream(remoteStream);
     }
 
     cleanupCall() {
         this.audio.stopRinging();
         this.session = null;
+        this.isHeld = false;
         this.callbacks.onCallEnd();
     }
 
@@ -169,10 +163,18 @@ export class PhoneEngine {
         }
     }
 
+    // New Helper: Check if active for DTMF
+    isCallActive() {
+        return this.session && this.session.state === SIP.SessionState.Established;
+    }
+
     sendDTMF(tone) {
-        if (this.session && this.session.state === SIP.SessionState.Established) {
+        if (this.isCallActive()) {
+            console.log("Sending DTMF:", tone);
             this.session.dtmf(tone);
+            return true;
         }
+        return false;
     }
 
     toggleMute() {
@@ -189,8 +191,26 @@ export class PhoneEngine {
         return isMuted;
     }
     
-    toggleHold() {
-         // TODO: Implement SIP Re-invite for Hold in Phase 2
-         console.warn("Hold not fully implemented in Phase 1");
+    // Updated: Real SIP Re-Invite for Hold
+    async toggleHold() {
+        if (!this.isCallActive()) return false;
+
+        const newHoldState = !this.isHeld;
+        
+        // SIP.js re-invite with hold modifier
+        const options = {
+            sessionDescriptionHandlerOptions: {
+                hold: newHoldState
+            }
+        };
+
+        try {
+            await this.session.invite(options);
+            this.isHeld = newHoldState;
+            return this.isHeld;
+        } catch (err) {
+            console.error("Hold failed:", err);
+            return this.isHeld; // Return previous state on error
+        }
     }
 }
