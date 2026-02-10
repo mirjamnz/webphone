@@ -2,18 +2,19 @@ export class AudioManager {
     constructor(settings) {
         this.settings = settings;
         
-        // Setup Ringtone
-        this.ringAudio = new Audio('sounds/ringing.mp3'); // Ensure this file exists!
+        // Ringtone (MP3)
+        this.ringAudio = new Audio('sounds/ringing.mp3'); 
         this.ringAudio.loop = true;
 
-        // Remote Audio Element (defined in HTML)
+        // Remote Audio Element
         this.remoteElement = document.getElementById('remoteAudio');
+
+        // AudioContext for Beeps
+        this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
 
-    // Initialize: Request permission and list devices
     async init() {
         try {
-            // We must request permission to see device labels
             await navigator.mediaDevices.getUserMedia({ audio: true });
             return await this.enumerateDevices();
         } catch (err) {
@@ -30,24 +31,19 @@ export class AudioManager {
         };
     }
 
-    // Helper to set output device (Chrome/Edge only)
     async setSinkId(element, deviceId) {
         if (element.setSinkId) {
-            try {
-                await element.setSinkId(deviceId);
-            } catch (error) {
-                console.warn(`Failed to set SinkId to ${deviceId}`, error);
-            }
+            try { await element.setSinkId(deviceId); } 
+            catch (error) { console.warn(`SinkId Error:`, error); }
         }
     }
 
-    // --- Ringing Control ---
+    // --- Ringing ---
     startRinging() {
         const ringerId = this.settings.get('ringerId');
         this.setSinkId(this.ringAudio, ringerId);
-        
         this.ringAudio.currentTime = 0;
-        this.ringAudio.play().catch(e => console.log("User interaction needed to play audio"));
+        this.ringAudio.play().catch(e => console.log("Interaction needed"));
     }
 
     stopRinging() {
@@ -55,7 +51,25 @@ export class AudioManager {
         this.ringAudio.currentTime = 0;
     }
 
-    // --- Call Audio Control ---
+    // --- Call Waiting Tone (Beep) ---
+    playCallWaitingTone() {
+        // Simple oscillator beep so we don't need another MP3
+        if (this.audioCtx.state === 'suspended') this.audioCtx.resume();
+        
+        const osc = this.audioCtx.createOscillator();
+        const gain = this.audioCtx.createGain();
+        
+        osc.connect(gain);
+        gain.connect(this.audioCtx.destination);
+        
+        osc.type = 'sine';
+        osc.frequency.value = 440; // A4 tone
+        gain.gain.value = 0.1; // Low volume
+        
+        osc.start();
+        osc.stop(this.audioCtx.currentTime + 0.5); // Beep for 0.5 sec
+    }
+
     setCallStream(stream) {
         this.remoteElement.srcObject = stream;
         const speakerId = this.settings.get('speakerId');

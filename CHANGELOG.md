@@ -35,6 +35,9 @@ All notable changes to the WebRTC Call Center project will be documented in this
 - **Client-Side Audio Mixing:** Implemented Web Audio API bridging to mix audio streams locally. This allows the Agent to bridge two callers together without requiring a server-side conference room.
 - **Dynamic Line Labels:** Line Manager buttons now display the specific phone numbers/extensions connected (e.g., "+6421..." instead of just "Line 1").
 - **Contextual UI:** Standard control buttons (Transfer/Consult) now hide automatically when the Line Manager is active to reduce interface clutter.
+- **Do Not Disturb (DND):** Toggle switch to auto-reject incoming calls with 486 Busy.
+- **Call Waiting:** Support for incoming calls while on an active call. Visual prompt allows answering (which auto-holds Line 1) or rejecting.
+- **Call Waiting Tone:** Soft digital beep generated via AudioContext to notify agent without interrupting audio stream.
 
 ### Fixed
 - Fixed audio routing issue where held calls remained in `recvonly` mode during a merge.
