@@ -10,7 +10,7 @@ export class PhoneEngine {
         this.userAgent = null;
         this.session = null;
         this.registerer = null;
-        this.isHeld = false; // Track hold state locally
+        this.isHeld = false; 
     }
 
     async connect() {
@@ -72,6 +72,7 @@ export class PhoneEngine {
         const domain = this.settings.get('domain');
         const target = SIP.UserAgent.makeURI(`sip:${targetNumber}@${domain}`);
         
+        // Audio Constraints
         const micId = this.settings.get('micId');
         const constraints = { 
             audio: micId && micId !== 'default' ? { deviceId: { exact: micId } } : true,
@@ -115,7 +116,7 @@ export class PhoneEngine {
 
     setupSession(session) {
         this.session = session;
-        this.isHeld = false; // Reset hold state
+        this.isHeld = false;
         const remoteUser = session.remoteIdentity.uri.user;
         
         this.callbacks.onCallStart(remoteUser);
@@ -163,18 +164,30 @@ export class PhoneEngine {
         }
     }
 
-    // New Helper: Check if active for DTMF
     isCallActive() {
         return this.session && this.session.state === SIP.SessionState.Established;
     }
 
+    // --- FIX 1: DTMF (Keypad) ---
     sendDTMF(tone) {
-        if (this.isCallActive()) {
-            console.log("Sending DTMF:", tone);
-            this.session.dtmf(tone);
+        if (!this.isCallActive()) return false;
+
+        console.log(`Attempting DTMF: ${tone}`);
+
+        // Method A: Insert into Audio Stream (RFC 4733/2833) - Preferred by Asterisk
+        const pc = this.session.sessionDescriptionHandler.peerConnection;
+        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+        
+        if (sender && sender.dtmf) {
+            console.log("Sending DTMF via RTP (Audio)");
+            sender.dtmf.insertDTMF(tone, 100, 70); // Tone, Duration, Gap
             return true;
         }
-        return false;
+
+        // Method B: SIP INFO (Fallback)
+        console.log("Sending DTMF via SIP INFO");
+        this.session.dtmf(tone);
+        return true;
     }
 
     toggleMute() {
@@ -191,26 +204,38 @@ export class PhoneEngine {
         return isMuted;
     }
     
-    // Updated: Real SIP Re-Invite for Hold
+    // --- FIX 2: Hold / Resume ---
     async toggleHold() {
-        if (!this.isCallActive()) return false;
+        if (!this.isCallActive()) {
+            console.warn("Cannot hold: Call not active");
+            return false;
+        }
 
         const newHoldState = !this.isHeld;
         
-        // SIP.js re-invite with hold modifier
+        // We must preserve audio constraints or microphone might die on resume
+        const micId = this.settings.get('micId');
+        const constraints = { 
+            audio: micId && micId !== 'default' ? { deviceId: { exact: micId } } : true,
+            video: false 
+        };
+
         const options = {
             sessionDescriptionHandlerOptions: {
-                hold: newHoldState
+                constraints: constraints,
+                hold: newHoldState // This adds a=sendonly or a=sendrecv
             }
         };
 
         try {
+            console.log(`Sending Hold Re-Invite: ${newHoldState}`);
             await this.session.invite(options);
             this.isHeld = newHoldState;
             return this.isHeld;
         } catch (err) {
             console.error("Hold failed:", err);
-            return this.isHeld; // Return previous state on error
+            // If error, return the OLD state (nothing changed)
+            return this.isHeld; 
         }
     }
 }
