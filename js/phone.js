@@ -10,7 +10,10 @@ export class PhoneEngine {
         this.userAgent = null;
         this.session = null;
         this.registerer = null;
-        this.isHeld = false; 
+        this.isHeld = false;
+        
+        // Conference Audio Context
+        this.confCtx = null;
     }
 
     async connect() {
@@ -143,7 +146,15 @@ export class PhoneEngine {
 
     cleanupCall() {
         this.audio.stopRinging();
+        
+        // Cleanup Conference Context if exists
+        if (this.confCtx) {
+            this.confCtx.close();
+            this.confCtx = null;
+        }
+
         this.session = null;
+        this.consultSession = null;
         this.isHeld = false;
         this.callbacks.onCallEnd();
     }
@@ -168,24 +179,15 @@ export class PhoneEngine {
         return this.session && this.session.state === SIP.SessionState.Established;
     }
 
-    // --- FIX 1: DTMF (Keypad) ---
     sendDTMF(tone) {
         if (!this.isCallActive()) return false;
-
         console.log(`Attempting DTMF: ${tone}`);
-
-        // Method A: Insert into Audio Stream (RFC 4733/2833) - Preferred by Asterisk
         const pc = this.session.sessionDescriptionHandler.peerConnection;
         const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
-        
         if (sender && sender.dtmf) {
-            console.log("Sending DTMF via RTP (Audio)");
-            sender.dtmf.insertDTMF(tone, 100, 70); // Tone, Duration, Gap
+            sender.dtmf.insertDTMF(tone, 100, 70); 
             return true;
         }
-
-        // Method B: SIP INFO (Fallback)
-        console.log("Sending DTMF via SIP INFO");
         this.session.dtmf(tone);
         return true;
     }
@@ -194,7 +196,6 @@ export class PhoneEngine {
         if (!this.session) return false;
         const pc = this.session.sessionDescriptionHandler.peerConnection;
         let isMuted = false;
-        
         pc.getSenders().forEach(sender => {
             if (sender.track && sender.track.kind === 'audio') {
                 sender.track.enabled = !sender.track.enabled;
@@ -204,142 +205,75 @@ export class PhoneEngine {
         return isMuted;
     }
     
-    // --- FIX 2: Hold / Resume ---
     async toggleHold() {
-        if (!this.isCallActive()) {
-            console.warn("Cannot hold: Call not active");
-            return false;
-        }
-
+        if (!this.isCallActive()) return false;
         const newHoldState = !this.isHeld;
-        
-        // We must preserve audio constraints or microphone might die on resume
         const micId = this.settings.get('micId');
         const constraints = { 
             audio: micId && micId !== 'default' ? { deviceId: { exact: micId } } : true,
             video: false 
         };
-
         const options = {
-            sessionDescriptionHandlerOptions: {
-                constraints: constraints,
-                hold: newHoldState // This adds a=sendonly or a=sendrecv
-            }
+            sessionDescriptionHandlerOptions: { constraints: constraints, hold: newHoldState }
         };
-
         try {
-            console.log(`Sending Hold Re-Invite: ${newHoldState}`);
             await this.session.invite(options);
             this.isHeld = newHoldState;
             return this.isHeld;
         } catch (err) {
             console.error("Hold failed:", err);
-            // If error, return the OLD state (nothing changed)
             return this.isHeld; 
         }
     }
 
-// --- ADDED: Blind Transfer ---
-async blindTransfer(targetNumber) {
-    if (!this.isCallActive()) return false;
-
-    console.log(`Attempting Blind Transfer to: ${targetNumber}`);
-    const target = SIP.UserAgent.makeURI(`sip:${targetNumber}@${this.settings.get('domain')}`);
-
-    if (!target) {
-        console.error("Invalid Transfer Target");
-        return false;
-    }
-
-    // SIP REFER method (Standard Blind Transfer)
-    const options = {
-        requestDelegate: {
-            onAccept: () => {
-                console.log("Transfer Accepted");
-                this.cleanupCall(); // End our side of the call
-            },
-            onReject: (response) => {
-                console.warn("Transfer Rejected", response);
-                alert("Transfer Failed: " + response.reasonPhrase);
+    async blindTransfer(targetNumber) {
+        if (!this.isCallActive()) return false;
+        const target = SIP.UserAgent.makeURI(`sip:${targetNumber}@${this.settings.get('domain')}`);
+        if (!target) return false;
+        const options = {
+            requestDelegate: {
+                onAccept: () => { this.cleanupCall(); },
+                onReject: (response) => { alert("Transfer Failed: " + response.reasonPhrase); }
             }
+        };
+        try {
+            await this.session.refer(target, options);
+            return true;
+        } catch (e) {
+            console.error("Transfer Exception", e);
+            return false;
         }
-    };
-
-    try {
-        // "refer" sends the caller to the new target
-        await this.session.refer(target, options);
-        return true;
-    } catch (e) {
-        console.error("Transfer Exception", e);
-        return false;
     }
-}
 
-// --- ADDED: Warm / Attended Transfer ---
-
-    // 1. Place current call on hold and dial the colleague
     async startConsultation(targetNumber) {
         if (!this.isCallActive()) return false;
+        if (!this.isHeld) await this.toggleHold(); 
 
-        console.log(`Starting consultation with: ${targetNumber}`);
-
-        // Step A: Hold the current customer
-        if (!this.isHeld) {
-            await this.toggleHold(); 
-        }
-
-        // Step B: Dial the colleague (Consult Session)
         const domain = this.settings.get('domain');
         const target = SIP.UserAgent.makeURI(`sip:${targetNumber}@${domain}`);
-        
-        // Use same audio constraints
         const micId = this.settings.get('micId');
         const constraints = { 
             audio: micId && micId !== 'default' ? { deviceId: { exact: micId } } : true,
             video: false 
         };
-
-        // Create the NEW session (Consult)
         const inviter = new SIP.Inviter(this.userAgent, target, {
             sessionDescriptionHandlerOptions: { constraints }
         });
-
-        this.consultSession = inviter; // Store it separately
-
-        // Handle the Consult Session events
+        this.consultSession = inviter; 
         this.consultSession.stateChange.addListener((state) => {
-            console.log("Consult Session State:", state);
-            if (state === SIP.SessionState.Established) {
-                // Switch Audio to the Colleague
-                this.setupRemoteMedia(this.consultSession);
-            }
-            if (state === SIP.SessionState.Terminated) {
-                this.consultSession = null;
-                // If colleague hangs up, we should probably unhold the customer?
-                // For now, we let the agent do it manually.
-            }
+            if (state === SIP.SessionState.Established) this.setupRemoteMedia(this.consultSession);
+            if (state === SIP.SessionState.Terminated) this.consultSession = null;
         });
-
         return inviter.invite();
     }
 
-    // 2. Complete the transfer (Connect Customer to Colleague)
     async completeConsultation() {
-        if (!this.session || !this.consultSession) {
-            console.error("Cannot complete transfer: sessions missing");
-            return false;
-        }
-
-        // We use REFER to tell Customer (session) to talk to Colleague (consultSession)
+        if (!this.session || !this.consultSession) return false;
         const target = this.consultSession.remoteIdentity.uri;
-        
         try {
-            // Refer Customer to Colleague
             await this.session.refer(target);
-            
-            // Hangup our leg with Colleague (Customer takes over)
             this.consultSession.bye(); 
-            this.cleanupCall(); // End our session
+            this.cleanupCall(); 
             return true;
         } catch (e) {
             console.error("Warm Transfer Failed", e);
@@ -347,52 +281,102 @@ async blindTransfer(targetNumber) {
         }
     }
 
-    // 3. Cancel the consult (Hangup Colleague, go back to Customer)
     async cancelConsultation() {
         if (this.consultSession) {
-            // Hangup colleague
-            switch(this.consultSession.state) {
-                case SIP.SessionState.Established:
-                    this.consultSession.bye();
-                    break;
-                default:
-                    this.consultSession.cancel();
-            }
+            this.consultSession.state === SIP.SessionState.Established ? this.consultSession.bye() : this.consultSession.cancel();
             this.consultSession = null;
         }
-
-        // Switch audio back to Customer (but keep them on Hold until agent clicks Resume)
         if (this.session && this.session.state === SIP.SessionState.Established) {
             this.setupRemoteMedia(this.session);
         }
     }
 
-    // --- ADDED: Line Toggling (Brokering) ---
     async swapToLine(lineNumber) {
         if (!this.session || !this.consultSession) return;
-
         const micId = this.settings.get('micId');
         const constraints = { 
             audio: micId && micId !== 'default' ? { deviceId: { exact: micId } } : true, 
             video: false 
         };
-
         if (lineNumber === 1) {
-            console.log("Swapping to Line 1...");
-            // Hold Line 2
             await this.consultSession.invite({ sessionDescriptionHandlerOptions: { constraints, hold: true } });
-            // Unhold Line 1
             await this.session.invite({ sessionDescriptionHandlerOptions: { constraints, hold: false } });
-            this.isHeld = false; // Update local state for Line 1
+            this.isHeld = false; 
         } 
         else if (lineNumber === 2) {
-            console.log("Swapping to Line 2...");
-            // Hold Line 1
             await this.session.invite({ sessionDescriptionHandlerOptions: { constraints, hold: true } });
-            // Unhold Line 2
             await this.consultSession.invite({ sessionDescriptionHandlerOptions: { constraints, hold: false } });
-            this.isHeld = true; // Update local state for Line 1
+            this.isHeld = true; 
         }
     }
 
+    // --- REVISED: Web Audio API Mixing (The "Magic Bridge") ---
+    async mergeCalls() {
+        if (!this.session || !this.consultSession) return false;
+        console.log("Merging calls: Setting up Digital Audio Bridge...");
+
+        try {
+            // 1. Unhold both lines via SIP (So Asterisk accepts audio)
+            const micId = this.settings.get('micId');
+            const constraints = { audio: micId && micId !== 'default' ? { deviceId: { exact: micId } } : true, video: false };
+            
+            if (this.isHeld) await this.session.invite({ sessionDescriptionHandlerOptions: { constraints, hold: false } });
+            await this.consultSession.invite({ sessionDescriptionHandlerOptions: { constraints, hold: false } });
+
+            // 2. Setup Audio Context
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            this.confCtx = new AudioContext();
+            
+            // 3. Get Peer Connections
+            const pc1 = this.session.sessionDescriptionHandler.peerConnection;
+            const pc2 = this.consultSession.sessionDescriptionHandler.peerConnection;
+
+            // 4. Get Sources (Mic, Remote1, Remote2)
+            
+            // Mic Source (From PC1 sender)
+            const sender1 = pc1.getSenders().find(s => s.track && s.track.kind === 'audio');
+            const micStream = new MediaStream([sender1.track]);
+            const micSource = this.confCtx.createMediaStreamSource(micStream);
+
+            // Remote 1 Source (From PC1 receivers)
+            const remoteStream1 = new MediaStream();
+            pc1.getReceivers().forEach(r => r.track && remoteStream1.addTrack(r.track));
+            const remoteSource1 = this.confCtx.createMediaStreamSource(remoteStream1);
+
+            // Remote 2 Source (From PC2 receivers)
+            const remoteStream2 = new MediaStream();
+            pc2.getReceivers().forEach(r => r.track && remoteStream2.addTrack(r.track));
+            const remoteSource2 = this.confCtx.createMediaStreamSource(remoteStream2);
+
+            // 5. Create Mix Destinations
+            // Mix for Line 1 (Needs Mic + Line 2)
+            const destForLine1 = this.confCtx.createMediaStreamDestination();
+            micSource.connect(destForLine1);
+            remoteSource2.connect(destForLine1);
+
+            // Mix for Line 2 (Needs Mic + Line 1)
+            const destForLine2 = this.confCtx.createMediaStreamDestination();
+            micSource.connect(destForLine2);
+            remoteSource1.connect(destForLine2);
+
+            // 6. Inject the Mix (Swap Tracks)
+            // This is safer than addTrack because it doesn't change SDP structure
+            const mixedTrack1 = destForLine1.stream.getAudioTracks()[0];
+            const mixedTrack2 = destForLine2.stream.getAudioTracks()[0];
+
+            await sender1.replaceTrack(mixedTrack1);
+            const sender2 = pc2.getSenders().find(s => s.track && s.track.kind === 'audio');
+            await sender2.replaceTrack(mixedTrack2);
+
+            console.log("Audio Bridge Established: 3-Way Active");
+            
+            this.isConference = true;
+            this.isHeld = false; 
+            return true;
+
+        } catch (err) {
+            console.error("Merge failed:", err);
+            return false;
+        }
+    }
 }

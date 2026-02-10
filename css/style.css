@@ -307,3 +307,74 @@ input[type="text"], input[type="password"] {
     opacity: 0 !important;
     pointer-events: none !important; 
 }
+
+/* --- PROFESSIONAL LINE MANAGER --- */
+.glass-panel {
+    background: rgba(30, 41, 59, 0.95); /* Dark Blue/Grey */
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    padding: 20px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    
+    /* Position */
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    right: 20px;
+    z-index: 50;
+    
+    /* Layout */
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.line-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    background: #0f172a;
+    padding: 5px;
+    border-radius: 12px;
+}
+
+.tab-btn {
+    padding: 12px;
+    border-radius: 8px;
+    border: none;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s;
+    color: var(--text-muted);
+    background: transparent;
+}
+
+/* Active Tab State */
+.tab-btn.active-line {
+    background: var(--success);
+    color: white;
+    box-shadow: 0 2px 10px rgba(16, 185, 129, 0.3);
+}
+
+/* Held Tab State */
+.tab-btn.held-line {
+    background: #334155;
+    color: var(--text-main);
+    opacity: 0.7;
+}
+
+.action-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.full-width {
+    width: 100%;
+}

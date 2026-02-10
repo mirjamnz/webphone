@@ -40,7 +40,9 @@ const ui = {
 };
 
 // --- State Variables ---
-let isConsulting = false; // Tracks if we are in "Warm Transfer Mode"
+let isConsulting = false; 
+let line1Num = "Line 1"; // Stores the number for the first call
+let line2Num = "Line 2"; // Stores the number for the second call
 
 const phoneCallbacks = {
     onStatus: (state) => {
@@ -61,6 +63,7 @@ const phoneCallbacks = {
 
         btnAnswer.onclick = () => {
             ui.panels.incoming.classList.add('hidden');
+            line1Num = caller; // Save incoming number
             acceptCb();
         };
         btnReject.onclick = () => {
@@ -73,7 +76,6 @@ const phoneCallbacks = {
         ui.panels.idle.classList.add('hidden');
         ui.panels.active.classList.remove('hidden');
         
-        // Reset states
         ui.btnMute.classList.remove('active');
         ui.btnHold.classList.remove('active');
         isConsulting = false;
@@ -92,11 +94,16 @@ const phoneCallbacks = {
         ui.panels.controls.classList.remove('active');
         ui.panels.incoming.classList.add('hidden'); 
         
-        // Reset everything
         ui.consultControls.classList.add('hidden');
-        isConsulting = false;
-        resetCallButton();
         
+        // RESTORE Standard Buttons
+        document.getElementById('btnTransfer').classList.remove('hidden');
+        document.getElementById('btnConsult').classList.remove('hidden');
+
+        isConsulting = false;
+        line1Num = "Line 1"; // Reset
+        line2Num = "Line 2"; // Reset
+        resetCallButton();
         stopTimer();
     }
 };
@@ -126,21 +133,28 @@ function resetCallButton() {
     ui.dialString.placeholder = "Enter Number...";
 }
 
+// --- UPDATED: UI Helper with Custom Names ---
 function updateLineUI(activeLine) {
+    // Reset base classes
+    ui.btnLine1.className = "tab-btn";
+    ui.btnLine2.className = "tab-btn";
+
     if (activeLine === 1) {
-        ui.btnLine1.className = "btn btn-success";
-        ui.btnLine1.innerHTML = '<i class="fa-solid fa-user"></i> Line 1 (Active)';
+        // Line 1 Active
+        ui.btnLine1.classList.add('active-line');
+        ui.btnLine1.innerHTML = `<i class="fa-solid fa-user"></i> <span>${line1Num} (Active)</span>`;
         
-        ui.btnLine2.className = "btn";
-        ui.btnLine2.style.background = "#334155";
-        ui.btnLine2.innerHTML = '<i class="fa-solid fa-user-doctor"></i> Line 2 (Held)';
+        // Line 2 Held
+        ui.btnLine2.classList.add('held-line');
+        ui.btnLine2.innerHTML = `<i class="fa-solid fa-user-doctor"></i> <span>${line2Num} (Held)</span>`;
     } else {
-        ui.btnLine1.className = "btn";
-        ui.btnLine1.style.background = "#334155";
-        ui.btnLine1.innerHTML = '<i class="fa-solid fa-user"></i> Line 1 (Held)';
+        // Line 1 Held
+        ui.btnLine1.classList.add('held-line');
+        ui.btnLine1.innerHTML = `<i class="fa-solid fa-user"></i> <span>${line1Num} (Held)</span>`;
         
-        ui.btnLine2.className = "btn btn-success";
-        ui.btnLine2.innerHTML = '<i class="fa-solid fa-user-doctor"></i> Line 2 (Active)';
+        // Line 2 Active
+        ui.btnLine2.classList.add('active-line');
+        ui.btnLine2.innerHTML = `<i class="fa-solid fa-user-doctor"></i> <span>${line2Num} (Active)</span>`;
     }
 }
 
@@ -176,24 +190,22 @@ document.getElementById('btnSaveConfig').addEventListener('click', () => {
     phone.connect();
 });
 
-// --- UPDATED: Integrated Call & Consult Button ---
 ui.btnCall.addEventListener('click', () => {
     const num = ui.dialString.value;
     if (!num) return;
 
     if (isConsulting) {
-        // We are in Consult Mode -> Dial Line 2
         console.log("Dialing 2nd line:", num);
+        line2Num = num; // Save Line 2 Number
         phone.startConsultation(num).then(() => {
             ui.consultControls.classList.remove('hidden');
             updateLineUI(2);
-            // Reset UI back to normal "Call" state (for next time)
             isConsulting = false;
             resetCallButton();
-            ui.dialString.value = ""; // Clear for cleanliness
+            ui.dialString.value = ""; 
         }).catch(err => alert("Consult failed: " + err));
     } else {
-        // Normal Call Mode
+        line1Num = num; // Save Line 1 Number
         phone.call(num).catch(e => {
             console.error("Call Failed:", e);
             alert("Call Error: " + e.message);
@@ -205,7 +217,6 @@ document.querySelectorAll('.digit-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         const digit = btn.getAttribute('data-digit');
         if (phone.isCallActive() && !isConsulting) {
-            // Only send DTMF if we are NOT trying to dial a 2nd line
             phone.sendDTMF(digit);
         } else {
             ui.dialString.value += digit;
@@ -223,7 +234,6 @@ document.getElementById('btnMute').addEventListener('click', () => {
 });
 
 document.getElementById('btnHold').addEventListener('click', async () => {
-    // If user manually resumes, we should probably cancel consult mode
     if (isConsulting) {
         isConsulting = false;
         resetCallButton();
@@ -244,29 +254,41 @@ document.getElementById('btnTransfer').addEventListener('click', () => {
 
 // --- UPDATED: Warm Transfer / Consult Trigger ---
 document.getElementById('btnConsult').addEventListener('click', async () => {
-    // 1. Enter Consult Mode
     isConsulting = true;
     setCallButtonToConsultMode();
 
-    // 2. Immediately Hold Current Call (if not already held)
-    // We check the UI class or ask phone engine
     if (!ui.btnHold.classList.contains('active')) {
         const isHeld = await phone.toggleHold();
         ui.btnHold.classList.toggle('active', isHeld);
     }
+    
+    document.getElementById('btnTransfer').classList.add('hidden');
+    document.getElementById('btnConsult').classList.add('hidden');
 });
 
-// Toggle to Line 1 (Original Caller)
 ui.btnLine1.addEventListener('click', () => {
     phone.swapToLine(1).then(() => updateLineUI(1));
 });
 
-// Toggle to Line 2 (Colleague)
 ui.btnLine2.addEventListener('click', () => {
     phone.swapToLine(2).then(() => updateLineUI(2));
 });
 
-// Complete the Transfer
+// --- 3-Way Conference Logic ---
+document.getElementById('btnMerge').addEventListener('click', () => {
+    phone.mergeCalls().then(success => {
+        if (success) {
+            ui.btnLine1.classList.add('active-line');
+            ui.btnLine1.classList.remove('held-line');
+            ui.btnLine1.innerHTML = `<i class="fa-solid fa-user"></i> <span>${line1Num} (Conf)</span>`;
+            
+            ui.btnLine2.classList.add('active-line');
+            ui.btnLine2.classList.remove('held-line');
+            ui.btnLine2.innerHTML = `<i class="fa-solid fa-user-doctor"></i> <span>${line2Num} (Conf)</span>`;
+        }
+    });
+});
+
 document.getElementById('btnCompleteTransfer').addEventListener('click', () => {
     phone.completeConsultation().then(success => {
         if (success) {
@@ -275,14 +297,16 @@ document.getElementById('btnCompleteTransfer').addEventListener('click', () => {
     });
 });
 
-// Cancel (Hangup Line 2, Return to Line 1)
 document.getElementById('btnCancelConsult').addEventListener('click', () => {
     phone.cancelConsultation(); 
-    phone.toggleHold(); // Auto-Resume Line 1
-    ui.btnHold.classList.remove('active'); // Update UI
+    phone.toggleHold(); 
+    ui.btnHold.classList.remove('active'); 
+    
     ui.consultControls.classList.add('hidden');
+    // Restore buttons
+    document.getElementById('btnTransfer').classList.remove('hidden');
+    document.getElementById('btnConsult').classList.remove('hidden');
 });
-
 
 // --- Helpers ---
 

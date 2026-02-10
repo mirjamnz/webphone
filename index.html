@@ -141,47 +141,46 @@
         <audio id="remoteAudio" autoplay></audio>
 
         <div id="controlsBar" class="controls-bar">
-            <button id="btnTransfer" class="ctrl-btn" title="Transfer" style="background: #334155;">
+            <button id="btnTransfer" class="ctrl-btn" title="Blind Transfer">
                 <i class="fa-solid fa-share-from-square"></i>
             </button>
-            <button id="btnConsult" class="ctrl-btn" title="Consult / Warm Transfer" style="background: #334155;">
+            <button id="btnConsult" class="ctrl-btn" title="Consult / Warm Transfer">
                 <i class="fa-solid fa-users-gear"></i>
             </button>
             
-            <div id="consultControls" class="controls-bar hidden" style="bottom: 90px; background: #0f172a; border: 1px solid var(--primary); flex-direction: column; gap: 10px; border-radius: 16px; padding: 15px;">
-                
-                <div style="font-size: 0.8rem; color: var(--text-muted); text-align: center; margin-bottom: 5px;">TRANSERRING</div>
-
-                <div style="display: flex; gap: 10px; width: 100%;">
-                    <button id="btnLine1" class="btn" style="flex: 1; background: #334155; border: 1px solid var(--border);">
-                        <i class="fa-solid fa-user"></i> Line 1 (Held)
-                    </button>
-                    
-                    <button id="btnLine2" class="btn btn-success" style="flex: 1;">
-                        <i class="fa-solid fa-user-doctor"></i> Line 2 (Active)
-                    </button>
-                </div>
-
-                <div style="display: flex; gap: 10px; width: 100%; margin-top: 5px;">
-                    <button id="btnCompleteTransfer" class="btn btn-primary" style="flex: 2;">
-                        <i class="fa-solid fa-share-from-square"></i> Complete Transfer
-                    </button>
-                    <button id="btnCancelConsult" class="btn btn-danger" style="flex: 1;">
-                        <i class="fa-solid fa-xmark"></i> Cancel
-                    </button>
-                </div>
-            </div>
-
             <button id="btnMute" class="ctrl-btn mute" title="Mute">
                 <i class="fa-solid fa-microphone-slash"></i>
             </button>
-            
             <button id="btnHangup" class="ctrl-btn hangup" title="End Call">
                 <i class="fa-solid fa-phone-slash"></i>
             </button>
-            
             <button id="btnHold" class="ctrl-btn hold" title="Hold">
                 <i class="fa-solid fa-pause"></i>
+            </button>
+        </div>
+
+        <div id="consultControls" class="glass-panel hidden">
+            
+            <div class="line-tabs">
+                <button id="btnLine1" class="tab-btn held-line">
+                    <i class="fa-solid fa-user"></i> <span>Customer (Held)</span>
+                </button>
+                <button id="btnLine2" class="tab-btn active-line">
+                    <i class="fa-solid fa-user-doctor"></i> <span>Colleague (Active)</span>
+                </button>
+            </div>
+
+            <div class="action-row">
+                <button id="btnMerge" class="btn btn-warning" style="color: black;">
+                    <i class="fa-solid fa-users-line"></i> Merge
+                </button>
+                <button id="btnCompleteTransfer" class="btn btn-primary">
+                    <i class="fa-solid fa-check"></i> Transfer
+                </button>
+            </div>
+
+            <button id="btnCancelConsult" class="btn btn-danger full-width">
+                <i class="fa-solid fa-xmark"></i> End Consultation (Return to Caller)
             </button>
         </div>
     </div>

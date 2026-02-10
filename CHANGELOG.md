@@ -30,6 +30,15 @@ All notable changes to the WebRTC Call Center project will be documented in this
 - **Warm Transfer UX:** Integrated 'Consult' mode into the main Dial Pad.
 - **Line Manager:** UI to toggle between Original Caller (Line 1) and Colleague (Line 2).
 - **Consultation Logic:** Automated Hold/Unhold when swapping lines.
+### Added
+- **3-Way Conferencing:** Added 'Merge' capability to bridge Line 1 and Line 2 into a single conference call.
+- **Client-Side Audio Mixing:** Implemented Web Audio API bridging to mix audio streams locally. This allows the Agent to bridge two callers together without requiring a server-side conference room.
+- **Dynamic Line Labels:** Line Manager buttons now display the specific phone numbers/extensions connected (e.g., "+6421..." instead of just "Line 1").
+- **Contextual UI:** Standard control buttons (Transfer/Consult) now hide automatically when the Line Manager is active to reduce interface clutter.
+
+### Fixed
+- Fixed audio routing issue where held calls remained in `recvonly` mode during a merge.
+- Fixed UI duplication bug in the Line Manager panel.
 
 ### Fixed
 - Fixed critical bug where "Incoming" modal blocked the "Active Call" controls.
