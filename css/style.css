@@ -1,0 +1,293 @@
+:root {
+    --bg-dark: #0f172a;
+    --bg-panel: #1e293b;
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
+    --success: #10b981;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    --border: #334155;
+    --input-bg: #0f172a;
+}
+
+body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--bg-dark);
+    color: var(--text-main);
+    height: 100vh;
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* --- Layout --- */
+.app-container {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 20px;
+    width: 95%;
+    max-width: 1200px;
+    height: 90vh;
+}
+
+.panel {
+    background: var(--bg-panel);
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+/* --- Sidebar & Header --- */
+.sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--border);
+}
+
+.config-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    width: 35px;
+    height: 35px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.config-btn:hover { background: var(--border); color: var(--text-main); }
+
+/* --- Status Cards --- */
+.status-card {
+    background: rgba(0,0,0,0.2);
+    padding: 12px;
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+}
+
+.status-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--danger);
+    display: inline-block;
+    margin-right: 8px;
+    box-shadow: 0 0 10px var(--danger);
+}
+.status-indicator.connected { 
+    background: var(--success); 
+    box-shadow: 0 0 10px var(--success);
+}
+
+/* --- Inputs & Dial Pad --- */
+input[type="text"], input[type="password"] {
+    width: 100%;
+    padding: 12px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    color: white;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-family: 'Courier New', monospace;
+    font-size: 1.1rem;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+/* Dropdown Styling */
+.select-input {
+    width: 100%;
+    padding: 10px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    color: white;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-size: 0.9rem;
+}
+
+.dial-pad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.digit-btn {
+    background: #334155;
+    border: none;
+    border-radius: 12px;
+    height: 50px;
+    color: var(--text-main);
+    font-size: 1.2rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+.digit-btn:hover { background: #475569; }
+.digit-btn:active { background: var(--primary); transform: scale(0.95); }
+
+/* --- Action Buttons --- */
+.action-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: auto;
+}
+
+.btn {
+    border: none;
+    padding: 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    transition: filter 0.2s;
+}
+.btn:hover { filter: brightness(1.15); }
+.btn-primary { background: var(--primary); }
+.btn-success { background: var(--success); }
+.btn-danger { background: var(--danger); }
+.btn-warning { background: var(--warning); color: #000; }
+.btn-circle { width: 60px; height: 60px; border-radius: 50%; font-size: 1.5rem; }
+
+/* --- Config Modal --- */
+.modal-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(15, 23, 42, 0.98);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    border-radius: 16px;
+}
+.modal-overlay.hidden { display: none; }
+
+.config-scroll-area {
+    overflow-y: auto;
+    flex: 1;
+    padding-right: 5px;
+}
+
+.config-group label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+    text-align: left;
+}
+
+/* --- Main Stage (Video/Call) --- */
+.main-stage {
+    background: #000;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.call-info {
+    text-align: center;
+    z-index: 10;
+}
+.timer {
+    font-family: monospace;
+    font-size: 2rem;
+    color: var(--success);
+    margin-top: 10px;
+}
+
+.avatar-circle {
+    width: 100px; 
+    height: 100px; 
+    background: #334155; 
+    border-radius: 50%; 
+    margin: 0 auto 20px; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
+    font-size: 2.5rem;
+}
+
+/* --- Incoming Call Overlay --- */
+.incoming-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(5px);
+}
+.incoming-box {
+    text-align: center;
+}
+.incoming-actions {
+    display: flex;
+    gap: 30px;
+    margin-top: 30px;
+    justify-content: center;
+}
+.pulsing {
+    animation: pulse-animation 2s infinite;
+    background: var(--primary);
+}
+
+@keyframes pulse-animation {
+    0% { box-shadow: 0 0 0 0px rgba(59, 130, 246, 0.7); }
+    100% { box-shadow: 0 0 0 20px rgba(59, 130, 246, 0); }
+}
+
+/* --- In-Call Controls --- */
+.controls-bar {
+    position: absolute;
+    bottom: 30px;
+    background: rgba(30, 41, 59, 0.8);
+    padding: 15px 30px;
+    border-radius: 50px;
+    display: flex;
+    gap: 20px;
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255,255,255,0.1);
+    transform: translateY(150px);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.controls-bar.active { transform: translateY(0); }
+
+.ctrl-btn {
+    width: 50px; height: 50px;
+    border-radius: 50%;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+.ctrl-btn.mute { background: #334155; }
+.ctrl-btn.mute.active { background: var(--warning); color: black; }
+.ctrl-btn.hold { background: #334155; }
+.ctrl-

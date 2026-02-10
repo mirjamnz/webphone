@@ -1,0 +1,33 @@
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node modules (if you switch to npm/bundlers later)
+node_modules/
+dist/
+build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local Environment / Secrets
+# IMPORTANT: Never commit passwords or real config files with secrets!
+.env
+config_local.js
+
+# Optional: If you want to keep your ringing sound but ignore other temp media
+# sounds/*
+# !sounds/ringing.mp3
