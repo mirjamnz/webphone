@@ -80,6 +80,10 @@ const phoneCallbacks = {
         ui.panels.active.classList.add('hidden');
         ui.panels.controls.classList.remove('active');
         ui.panels.incoming.classList.add('hidden'); 
+        
+        // Hide Consult controls if they were open
+        document.getElementById('consultControls').classList.add('hidden');
+        
         stopTimer();
     }
 };
@@ -134,11 +138,10 @@ document.getElementById('btnCall').addEventListener('click', () => {
     }
 });
 
-// FIXED: Dial Pad Logic using phone.isCallActive()
+// Dial Pad Logic
 document.querySelectorAll('.digit-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         const digit = btn.getAttribute('data-digit');
-        // If call is active, send DTMF. If not, type in box.
         if (phone.isCallActive()) {
             phone.sendDTMF(digit);
         } else {
@@ -148,7 +151,6 @@ document.querySelectorAll('.digit-btn').forEach(btn => {
 });
 
 document.getElementById('btnHangup').addEventListener('click', () => {
-    console.log("Hangup Clicked"); // Debug
     phone.hangup();
 });
 
@@ -157,13 +159,13 @@ document.getElementById('btnMute').addEventListener('click', () => {
     ui.btnMute.classList.toggle('active', isMuted);
 });
 
-// FIXED: Hold Button Logic
+// Hold Button Logic
 document.getElementById('btnHold').addEventListener('click', async () => {
     const isHeld = await phone.toggleHold();
     ui.btnHold.classList.toggle('active', isHeld);
 });
 
-// --- Transfer Logic ---
+// --- Blind Transfer Logic ---
 document.getElementById('btnTransfer').addEventListener('click', () => {
     const num = prompt("Enter extension to transfer to:");
     if (num) {
@@ -173,33 +175,67 @@ document.getElementById('btnTransfer').addEventListener('click', () => {
     }
 });
 
-// --- Warm Transfer Logic ---
+// --- Warm Transfer / Line Manager Logic ---
 const consultControls = document.getElementById('consultControls');
+const btnLine1 = document.getElementById('btnLine1');
+const btnLine2 = document.getElementById('btnLine2');
 
 document.getElementById('btnConsult').addEventListener('click', () => {
     const num = prompt("Enter number to consult:");
     if (num) {
         phone.startConsultation(num).then(() => {
-            // Show the "Complete / Cancel" overlay
             consultControls.classList.remove('hidden');
+            updateLineUI(2); // Line 2 is active by default
         }).catch(err => alert("Consult failed: " + err));
     }
 });
 
+// Toggle to Line 1 (Original Caller)
+btnLine1.addEventListener('click', () => {
+    phone.swapToLine(1).then(() => updateLineUI(1));
+});
+
+// Toggle to Line 2 (Colleague)
+btnLine2.addEventListener('click', () => {
+    phone.swapToLine(2).then(() => updateLineUI(2));
+});
+
+// Complete the Transfer
 document.getElementById('btnCompleteTransfer').addEventListener('click', () => {
-    phone.completeConsultation();
-    consultControls.classList.add('hidden');
+    phone.completeConsultation().then(success => {
+        if (success) {
+            consultControls.classList.add('hidden');
+        }
+    });
 });
 
+// Cancel (Hangup Line 2, Return to Line 1)
 document.getElementById('btnCancelConsult').addEventListener('click', () => {
-    phone.cancelConsultation();
+    phone.cancelConsultation(); // This kills Line 2
+    phone.toggleHold();         // Unhold Line 1 (Resume)
     consultControls.classList.add('hidden');
-    // Note: The original call is still on hold. Agent must click "Resume" manually.
 });
 
-document.getElementById('btnShowConfig').addEventListener('click', () => ui.panels.config.classList.remove('hidden'));
-document.getElementById('btnCloseConfig').addEventListener('click', () => ui.panels.config.classList.add('hidden'));
-document.getElementById('btnLogin').addEventListener('click', () => phone.connect());
+// Helper to visually toggle button styles
+function updateLineUI(activeLine) {
+    if (activeLine === 1) {
+        btnLine1.className = "btn btn-success";
+        btnLine1.innerHTML = '<i class="fa-solid fa-user"></i> Line 1 (Active)';
+        
+        btnLine2.className = "btn";
+        btnLine2.style.background = "#334155";
+        btnLine2.innerHTML = '<i class="fa-solid fa-user-doctor"></i> Line 2 (Held)';
+    } else {
+        btnLine1.className = "btn";
+        btnLine1.style.background = "#334155";
+        btnLine1.innerHTML = '<i class="fa-solid fa-user"></i> Line 1 (Held)';
+        
+        btnLine2.className = "btn btn-success";
+        btnLine2.innerHTML = '<i class="fa-solid fa-user-doctor"></i> Line 2 (Active)';
+    }
+}
+
+// --- General Helpers (Previously missing from your paste) ---
 
 function populateDeviceSelect(selectEl, devices, selectedId) {
     selectEl.innerHTML = ''; 

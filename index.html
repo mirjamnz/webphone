@@ -148,15 +148,30 @@
                 <i class="fa-solid fa-users-gear"></i>
             </button>
             
-            <div id="consultControls" class="controls-bar hidden" style="bottom: 90px; background: #0f172a; border-color: var(--primary);">
-                <button id="btnCompleteTransfer" class="btn btn-success" style="margin-right:10px;">
-                    <i class="fa-solid fa-check"></i> Complete
-                </button>
-                <button id="btnCancelConsult" class="btn btn-danger">
-                    <i class="fa-solid fa-xmark"></i> Cancel
-                </button>
+            <div id="consultControls" class="controls-bar hidden" style="bottom: 90px; background: #0f172a; border: 1px solid var(--primary); flex-direction: column; gap: 10px; border-radius: 16px; padding: 15px;">
+                
+                <div style="font-size: 0.8rem; color: var(--text-muted); text-align: center; margin-bottom: 5px;">TRANSERRING</div>
+
+                <div style="display: flex; gap: 10px; width: 100%;">
+                    <button id="btnLine1" class="btn" style="flex: 1; background: #334155; border: 1px solid var(--border);">
+                        <i class="fa-solid fa-user"></i> Line 1 (Held)
+                    </button>
+                    
+                    <button id="btnLine2" class="btn btn-success" style="flex: 1;">
+                        <i class="fa-solid fa-user-doctor"></i> Line 2 (Active)
+                    </button>
+                </div>
+
+                <div style="display: flex; gap: 10px; width: 100%; margin-top: 5px;">
+                    <button id="btnCompleteTransfer" class="btn btn-primary" style="flex: 2;">
+                        <i class="fa-solid fa-share-from-square"></i> Complete Transfer
+                    </button>
+                    <button id="btnCancelConsult" class="btn btn-danger" style="flex: 1;">
+                        <i class="fa-solid fa-xmark"></i> Cancel
+                    </button>
+                </div>
             </div>
-            
+
             <button id="btnMute" class="ctrl-btn mute" title="Mute">
                 <i class="fa-solid fa-microphone-slash"></i>
             </button>

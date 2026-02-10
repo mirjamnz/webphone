@@ -367,4 +367,32 @@ async blindTransfer(targetNumber) {
         }
     }
 
+    // --- ADDED: Line Toggling (Brokering) ---
+    async swapToLine(lineNumber) {
+        if (!this.session || !this.consultSession) return;
+
+        const micId = this.settings.get('micId');
+        const constraints = { 
+            audio: micId && micId !== 'default' ? { deviceId: { exact: micId } } : true, 
+            video: false 
+        };
+
+        if (lineNumber === 1) {
+            console.log("Swapping to Line 1...");
+            // Hold Line 2
+            await this.consultSession.invite({ sessionDescriptionHandlerOptions: { constraints, hold: true } });
+            // Unhold Line 1
+            await this.session.invite({ sessionDescriptionHandlerOptions: { constraints, hold: false } });
+            this.isHeld = false; // Update local state for Line 1
+        } 
+        else if (lineNumber === 2) {
+            console.log("Swapping to Line 2...");
+            // Hold Line 1
+            await this.session.invite({ sessionDescriptionHandlerOptions: { constraints, hold: true } });
+            // Unhold Line 2
+            await this.consultSession.invite({ sessionDescriptionHandlerOptions: { constraints, hold: false } });
+            this.isHeld = true; // Update local state for Line 1
+        }
+    }
+
 }
