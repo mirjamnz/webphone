@@ -30,8 +30,17 @@ const ui = {
     remoteIdentity: document.getElementById('remoteIdentity'),
     timer: document.getElementById('callTimer'),
     btnMute: document.getElementById('btnMute'),
-    btnHold: document.getElementById('btnHold')
+    btnHold: document.getElementById('btnHold'),
+    // Line Manager UI
+    consultControls: document.getElementById('consultControls'),
+    btnLine1: document.getElementById('btnLine1'),
+    btnLine2: document.getElementById('btnLine2'),
+    // Main Call Button
+    btnCall: document.getElementById('btnCall')
 };
+
+// --- State Variables ---
+let isConsulting = false; // Tracks if we are in "Warm Transfer Mode"
 
 const phoneCallbacks = {
     onStatus: (state) => {
@@ -64,9 +73,11 @@ const phoneCallbacks = {
         ui.panels.idle.classList.add('hidden');
         ui.panels.active.classList.remove('hidden');
         
-        // Reset button states
+        // Reset states
         ui.btnMute.classList.remove('active');
         ui.btnHold.classList.remove('active');
+        isConsulting = false;
+        resetCallButton();
 
         setTimeout(() => {
             ui.panels.controls.classList.add('active');
@@ -81,8 +92,10 @@ const phoneCallbacks = {
         ui.panels.controls.classList.remove('active');
         ui.panels.incoming.classList.add('hidden'); 
         
-        // Hide Consult controls if they were open
-        document.getElementById('consultControls').classList.add('hidden');
+        // Reset everything
+        ui.consultControls.classList.add('hidden');
+        isConsulting = false;
+        resetCallButton();
         
         stopTimer();
     }
@@ -95,6 +108,41 @@ window.app = {
         phone.call(num).catch(e => alert(e.message));
     }
 };
+
+// --- UI Helpers for Consult Mode ---
+function setCallButtonToConsultMode() {
+    ui.btnCall.classList.remove('btn-success');
+    ui.btnCall.classList.add('btn-warning');
+    ui.btnCall.innerHTML = '<i class="fa-solid fa-user-plus"></i> Dial 2nd Line';
+    ui.dialString.placeholder = "Enter Colleague #";
+    ui.dialString.value = "";
+    ui.dialString.focus();
+}
+
+function resetCallButton() {
+    ui.btnCall.classList.remove('btn-warning');
+    ui.btnCall.classList.add('btn-success');
+    ui.btnCall.innerHTML = '<i class="fa-solid fa-phone"></i> Call';
+    ui.dialString.placeholder = "Enter Number...";
+}
+
+function updateLineUI(activeLine) {
+    if (activeLine === 1) {
+        ui.btnLine1.className = "btn btn-success";
+        ui.btnLine1.innerHTML = '<i class="fa-solid fa-user"></i> Line 1 (Active)';
+        
+        ui.btnLine2.className = "btn";
+        ui.btnLine2.style.background = "#334155";
+        ui.btnLine2.innerHTML = '<i class="fa-solid fa-user-doctor"></i> Line 2 (Held)';
+    } else {
+        ui.btnLine1.className = "btn";
+        ui.btnLine1.style.background = "#334155";
+        ui.btnLine1.innerHTML = '<i class="fa-solid fa-user"></i> Line 1 (Held)';
+        
+        ui.btnLine2.className = "btn btn-success";
+        ui.btnLine2.innerHTML = '<i class="fa-solid fa-user-doctor"></i> Line 2 (Active)';
+    }
+}
 
 // --- Event Listeners ---
 
@@ -128,9 +176,24 @@ document.getElementById('btnSaveConfig').addEventListener('click', () => {
     phone.connect();
 });
 
-document.getElementById('btnCall').addEventListener('click', () => {
+// --- UPDATED: Integrated Call & Consult Button ---
+ui.btnCall.addEventListener('click', () => {
     const num = ui.dialString.value;
-    if (num) {
+    if (!num) return;
+
+    if (isConsulting) {
+        // We are in Consult Mode -> Dial Line 2
+        console.log("Dialing 2nd line:", num);
+        phone.startConsultation(num).then(() => {
+            ui.consultControls.classList.remove('hidden');
+            updateLineUI(2);
+            // Reset UI back to normal "Call" state (for next time)
+            isConsulting = false;
+            resetCallButton();
+            ui.dialString.value = ""; // Clear for cleanliness
+        }).catch(err => alert("Consult failed: " + err));
+    } else {
+        // Normal Call Mode
         phone.call(num).catch(e => {
             console.error("Call Failed:", e);
             alert("Call Error: " + e.message);
@@ -138,11 +201,11 @@ document.getElementById('btnCall').addEventListener('click', () => {
     }
 });
 
-// Dial Pad Logic
 document.querySelectorAll('.digit-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         const digit = btn.getAttribute('data-digit');
-        if (phone.isCallActive()) {
+        if (phone.isCallActive() && !isConsulting) {
+            // Only send DTMF if we are NOT trying to dial a 2nd line
             phone.sendDTMF(digit);
         } else {
             ui.dialString.value += digit;
@@ -159,8 +222,12 @@ document.getElementById('btnMute').addEventListener('click', () => {
     ui.btnMute.classList.toggle('active', isMuted);
 });
 
-// Hold Button Logic
 document.getElementById('btnHold').addEventListener('click', async () => {
+    // If user manually resumes, we should probably cancel consult mode
+    if (isConsulting) {
+        isConsulting = false;
+        resetCallButton();
+    }
     const isHeld = await phone.toggleHold();
     ui.btnHold.classList.toggle('active', isHeld);
 });
@@ -175,28 +242,27 @@ document.getElementById('btnTransfer').addEventListener('click', () => {
     }
 });
 
-// --- Warm Transfer / Line Manager Logic ---
-const consultControls = document.getElementById('consultControls');
-const btnLine1 = document.getElementById('btnLine1');
-const btnLine2 = document.getElementById('btnLine2');
+// --- UPDATED: Warm Transfer / Consult Trigger ---
+document.getElementById('btnConsult').addEventListener('click', async () => {
+    // 1. Enter Consult Mode
+    isConsulting = true;
+    setCallButtonToConsultMode();
 
-document.getElementById('btnConsult').addEventListener('click', () => {
-    const num = prompt("Enter number to consult:");
-    if (num) {
-        phone.startConsultation(num).then(() => {
-            consultControls.classList.remove('hidden');
-            updateLineUI(2); // Line 2 is active by default
-        }).catch(err => alert("Consult failed: " + err));
+    // 2. Immediately Hold Current Call (if not already held)
+    // We check the UI class or ask phone engine
+    if (!ui.btnHold.classList.contains('active')) {
+        const isHeld = await phone.toggleHold();
+        ui.btnHold.classList.toggle('active', isHeld);
     }
 });
 
 // Toggle to Line 1 (Original Caller)
-btnLine1.addEventListener('click', () => {
+ui.btnLine1.addEventListener('click', () => {
     phone.swapToLine(1).then(() => updateLineUI(1));
 });
 
 // Toggle to Line 2 (Colleague)
-btnLine2.addEventListener('click', () => {
+ui.btnLine2.addEventListener('click', () => {
     phone.swapToLine(2).then(() => updateLineUI(2));
 });
 
@@ -204,38 +270,21 @@ btnLine2.addEventListener('click', () => {
 document.getElementById('btnCompleteTransfer').addEventListener('click', () => {
     phone.completeConsultation().then(success => {
         if (success) {
-            consultControls.classList.add('hidden');
+            ui.consultControls.classList.add('hidden');
         }
     });
 });
 
 // Cancel (Hangup Line 2, Return to Line 1)
 document.getElementById('btnCancelConsult').addEventListener('click', () => {
-    phone.cancelConsultation(); // This kills Line 2
-    phone.toggleHold();         // Unhold Line 1 (Resume)
-    consultControls.classList.add('hidden');
+    phone.cancelConsultation(); 
+    phone.toggleHold(); // Auto-Resume Line 1
+    ui.btnHold.classList.remove('active'); // Update UI
+    ui.consultControls.classList.add('hidden');
 });
 
-// Helper to visually toggle button styles
-function updateLineUI(activeLine) {
-    if (activeLine === 1) {
-        btnLine1.className = "btn btn-success";
-        btnLine1.innerHTML = '<i class="fa-solid fa-user"></i> Line 1 (Active)';
-        
-        btnLine2.className = "btn";
-        btnLine2.style.background = "#334155";
-        btnLine2.innerHTML = '<i class="fa-solid fa-user-doctor"></i> Line 2 (Held)';
-    } else {
-        btnLine1.className = "btn";
-        btnLine1.style.background = "#334155";
-        btnLine1.innerHTML = '<i class="fa-solid fa-user"></i> Line 1 (Held)';
-        
-        btnLine2.className = "btn btn-success";
-        btnLine2.innerHTML = '<i class="fa-solid fa-user-doctor"></i> Line 2 (Active)';
-    }
-}
 
-// --- General Helpers (Previously missing from your paste) ---
+// --- Helpers ---
 
 function populateDeviceSelect(selectEl, devices, selectedId) {
     selectEl.innerHTML = ''; 
