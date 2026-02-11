@@ -2,10 +2,10 @@ import { CONFIG } from './config.js';
 import { SettingsManager } from './settings.js';
 import { AudioManager } from './audio.js';
 import { PhoneEngine } from './phone.js';
+import { BlfManager } from './blf.js'; // NEW IMPORT
 
 const settings = new SettingsManager();
 const audio = new AudioManager(settings);
-
 const ui = {
     dialString: document.getElementById('dialString'),
     inputs: {
@@ -35,13 +35,13 @@ const ui = {
     btnLine1: document.getElementById('btnLine1'),
     btnLine2: document.getElementById('btnLine2'),
     btnCall: document.getElementById('btnCall'),
-    // NEW: DND
     dndToggle: document.getElementById('dndToggle')
 };
 
 let isConsulting = false; 
 let line1Num = "Line 1"; 
 let line2Num = "Line 2"; 
+let blfManager = null; // NEW VARIABLE
 
 const phoneCallbacks = {
     onStatus: (state) => {
@@ -49,6 +49,12 @@ const phoneCallbacks = {
         if (state === 'Registered') {
             ui.statusDot.className = 'status-indicator connected';
             ui.btnLogin.innerHTML = '<i class="fa-solid fa-rotate"></i> Reconnect';
+            
+            // --- NEW: Initialize BLF after registration ---
+            if (!blfManager) {
+                blfManager = new BlfManager(phone, settings);
+                blfManager.init();
+            }
         } else {
             ui.statusDot.className = 'status-indicator';
         }
@@ -56,13 +62,11 @@ const phoneCallbacks = {
     onIncoming: (caller, acceptCb, rejectCb) => {
         document.getElementById('incomingIdentity').innerText = caller;
         ui.panels.incoming.classList.remove('hidden');
-        
         const btnAnswer = document.getElementById('btnAnswer');
         const btnReject = document.getElementById('btnReject');
 
         btnAnswer.onclick = () => {
             ui.panels.incoming.classList.add('hidden');
-            // If we are already in a call (Line 1 active), this is Line 2
             if (!ui.panels.active.classList.contains('hidden')) {
                 line2Num = caller; 
             } else {
@@ -79,29 +83,19 @@ const phoneCallbacks = {
         ui.panels.incoming.classList.add('hidden');
         ui.panels.idle.classList.add('hidden');
         ui.panels.active.classList.remove('hidden');
-        
         ui.btnMute.classList.remove('active');
         ui.btnHold.classList.remove('active');
         isConsulting = false;
         resetCallButton();
-
-        setTimeout(() => {
-            ui.panels.controls.classList.add('active');
-        }, 50);
-
+        setTimeout(() => { ui.panels.controls.classList.add('active'); }, 50);
         ui.remoteIdentity.innerText = remoteUser || "Unknown";
         startTimer();
     },
-    // NEW: Triggered when answering Line 2 (Call Waiting)
     onCallWaitingAccept: () => {
         ui.consultControls.classList.remove('hidden');
-        updateLineUI(2); // Auto-switch view to Line 2
-        isConsulting = true; // Enable Consult logic
-        
-        // Update Hold Button State (Since Line 1 is auto-held)
+        updateLineUI(2);
+        isConsulting = true;
         ui.btnHold.classList.add('active');
-        
-        // Hide standard controls
         document.getElementById('btnTransfer').classList.add('hidden');
         document.getElementById('btnConsult').classList.add('hidden');
     },
@@ -111,10 +105,8 @@ const phoneCallbacks = {
         ui.panels.controls.classList.remove('active');
         ui.panels.incoming.classList.add('hidden'); 
         ui.consultControls.classList.add('hidden');
-        
         document.getElementById('btnTransfer').classList.remove('hidden');
         document.getElementById('btnConsult').classList.remove('hidden');
-
         isConsulting = false;
         line1Num = "Line 1"; 
         line2Num = "Line 2"; 
@@ -131,7 +123,6 @@ window.app = {
     }
 };
 
-// --- Helpers ---
 function setCallButtonToConsultMode() {
     ui.btnCall.classList.remove('btn-success');
     ui.btnCall.classList.add('btn-warning');
@@ -164,25 +155,20 @@ function updateLineUI(activeLine) {
     }
 }
 
-// --- Event Listeners ---
-
 window.addEventListener('DOMContentLoaded', async () => {
     ui.inputs.user.value = settings.get('username');
     ui.inputs.pass.value = settings.get('password');
     ui.inputs.domain.value = settings.get('domain') || CONFIG.DEFAULT_DOMAIN;
     ui.inputs.wss.value = settings.get('wssUrl') || CONFIG.DEFAULT_WSS;
-
     const devices = await audio.init();
     populateDeviceSelect(ui.inputs.mic, devices.inputs, settings.get('micId'));
     populateDeviceSelect(ui.inputs.speaker, devices.outputs, settings.get('speakerId'));
     populateDeviceSelect(ui.inputs.ringer, devices.outputs, settings.get('ringerId'));
-
     if (settings.get('username') && settings.get('password')) {
         phone.connect();
     }
 });
 
-// NEW: DND Toggle Listener
 ui.dndToggle.addEventListener('change', (e) => {
     phone.setDND(e.target.checked);
 });
@@ -204,7 +190,6 @@ document.getElementById('btnSaveConfig').addEventListener('click', () => {
 ui.btnCall.addEventListener('click', () => {
     const num = ui.dialString.value;
     if (!num) return;
-
     if (isConsulting) {
         line2Num = num; 
         phone.startConsultation(num).then(() => {

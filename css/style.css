@@ -438,3 +438,84 @@ input:checked + .slider {
 input:checked + .slider:before {
     transform: translateX(18px);
 }
+
+/* --- BLF Grid --- */
+.blf-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 20px;
+    margin-top: 10px;
+}
+
+.blf-chip {
+    display: flex;
+    align-items: center;
+    background: #334155;
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    transition: all 0.3s;
+    cursor: default;
+}
+
+.blf-status {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 12px;
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
+    background: #94a3b8; /* Grey/Unknown */
+}
+
+.blf-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.blf-ext {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.blf-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.blf-call-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 5px;
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+.blf-call-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: white;
+}
+
+/* --- BLF States --- */
+.blf-chip.state-available .blf-status {
+    background: var(--success); /* Green */
+    box-shadow: 0 0 8px var(--success);
+}
+
+.blf-chip.state-ringing .blf-status {
+    background: var(--warning); /* Orange/Yellow */
+    animation: blink-animation 1s infinite;
+}
+
+.blf-chip.state-talking .blf-status {
+    background: var(--danger); /* Red */
+    box-shadow: 0 0 8px var(--danger);
+}
+
+@keyframes blink-animation {
+    0% { opacity: 1; }
+    50% { opacity: 0.4; }
+    100% { opacity: 1; }
+}
