@@ -5,14 +5,27 @@ export class BlfManager {
         this.phone = phoneEngine;
         this.settings = settings;
         this.subscriptions = new Map();
-        
-        // Extensions to monitor
-        this.monitoredExtensions = ['3001', '3002', '3003', '3004']; 
+        this.monitoredExtensions = [];
     }
 
     init() {
         if (!this.phone.userAgent) return;
+        
+        // 1. Load extensions from settings
+        const storedList = this.settings.get('blfList');
+        if (storedList) {
+            // Split string "3001, 3002" into array ['3001', '3002']
+            this.monitoredExtensions = storedList.split(',')
+                .map(s => s.trim())
+                .filter(s => s.length > 0); // Remove empty entries
+        } else {
+            // Default Fallback if nothing configured
+            this.monitoredExtensions = ['3001', '3002', '3003', '3004'];
+        }
+
+        console.log("Initializing BLF for:", this.monitoredExtensions);
         this.renderPlaceholderUI();
+
         this.monitoredExtensions.forEach(ext => {
             this.subscribeTo(ext);
         });
@@ -47,13 +60,17 @@ export class BlfManager {
     }
 
     subscribeTo(extension) {
-        if (this.subscriptions.has(extension)) return;
+        // Clear existing if re-subscribing
+        if (this.subscriptions.has(extension)) {
+            const oldSub = this.subscriptions.get(extension);
+            oldSub.unsubscribe();
+            this.subscriptions.delete(extension);
+        }
 
         const domain = this.settings.get('domain');
         const target = SIP.UserAgent.makeURI(`sip:${extension}@${domain}`);
         if (!target) return;
 
-        // FIXED: Use 'presence' (PIDF) instead of 'dialog' to detect Offline status
         const subscriber = new SIP.Subscriber(this.phone.userAgent, target, 'presence', {
             expires: 3600,
             extraHeaders: [
@@ -76,12 +93,11 @@ export class BlfManager {
         this.subscriptions.set(extension, subscriber);
     }
 
-    // FIXED: Parser for PIDF+XML (RFC 3863)
+    // Parser for PIDF+XML (RFC 3863)
     parsePidf(extension, xmlBody) {
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlBody, "text/xml");
         
-        // 1. Check <basic> status (open = Online, closed = Offline)
         const basicNode = xmlDoc.getElementsByTagName("basic")[0];
         if (!basicNode) return;
 
@@ -93,12 +109,9 @@ export class BlfManager {
             uiState = 'available';
             label = 'Available';
 
-            // 2. Check <note> or <show> for Busy/Ringing details
-            // Asterisk sends notes like "Ready", "On the phone", "Ringing"
             const noteNode = xmlDoc.getElementsByTagName("note")[0];
             if (noteNode) {
                 const note = noteNode.textContent.toLowerCase();
-                
                 if (note.includes('ringing')) {
                     uiState = 'ringing';
                     label = 'Ringing';
@@ -108,7 +121,6 @@ export class BlfManager {
                 }
             }
         } 
-        // If 'closed', we leave it as 'offline' (Gray)
 
         this.updateUI(extension, uiState, label);
     }
@@ -117,10 +129,7 @@ export class BlfManager {
         const el = document.getElementById(`blf-${ext}`);
         if (!el) return;
 
-        // Clear all state classes
         el.classList.remove('state-offline', 'state-available', 'state-ringing', 'state-talking', 'state-unknown');
-        
-        // Add new state
         el.classList.add(`state-${state}`);
         el.querySelector('.blf-label').innerText = label;
     }

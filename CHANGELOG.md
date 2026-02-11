@@ -54,7 +54,16 @@ All notable changes to the WebRTC Call Center project will be documented in this
 - **Call Waiting:** Visual and audible notification for incoming calls while busy.
 - **Call Waiting Tone:** Implemented non-intrusive digital beep using Web Audio API (440Hz oscillator) to alert agents without interrupting the audio stream.
 - **Audio Bridge:** Implemented client-side audio mixing (Track Grafting) to enable 3-Way Conferencing without server-side bridges.
+- **Colleague Management UI:** Added a dedicated modal for managing Monitored Extensions (BLF), separate from the technical SIP configuration.
+- **Edit Button:** Added an "Edit" button directly to the Colleagues header for quick access.
+
+### Changed
+- **Configuration UX:** Moved the "Monitored Extensions" input out of the main SIP Settings modal to prevent accidental technical changes.
+- **State Management:** Settings modals now correctly re-populate with saved values every time they are opened, fixing an issue where fields appeared empty.
 
 ### Fixed
 - **UI:** Resolved duplicate "Agent Panel" headers and DND toggles in the sidebar.
 - **Context Logic:** Fixed context scope issues for BLF subscriptions (hints moved to shared context).
+### Fixed
+- **BLF Presence Logic:** Switched SIP subscription mode from `dialog` to `presence` (PIDF+XML). This correctly distinguishes between 'Offline' (Gray) and 'Available' (Green), fixing the issue where unregistered extensions appeared as Available.
+- **Dialplan Hints:** Updated Asterisk dialplan to place hints in a shared context (`[blf_hints]`) ensuring both internal agents and external trunks can subscribe to status updates properly.

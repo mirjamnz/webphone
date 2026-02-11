@@ -16,7 +16,7 @@
         
         <div class="sidebar-header">
             <h3><i class="fa-solid fa-headset"></i> Agent Panel</h3>
-            <button class="config-btn" id="btnShowConfig" title="Settings">
+            <button class="config-btn" id="btnShowConfig" title="SIP Settings">
                 <i class="fa-solid fa-gear"></i>
             </button>
         </div>
@@ -29,9 +29,15 @@
             </label>
         </div>
 
-        <div style="margin-bottom: 5px; padding-left: 5px; font-size: 0.8rem; color: var(--text-muted);">
-            <i class="fa-solid fa-users"></i> COLLEAGUES
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 0 5px;">
+            <div style="font-size: 0.8rem; color: var(--text-muted);">
+                <i class="fa-solid fa-users"></i> COLLEAGUES
+            </div>
+            <button id="btnBlfConfig" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.8rem;" title="Edit List">
+                <i class="fa-solid fa-pen-to-square"></i> Edit
+            </button>
         </div>
+
         <div id="blfGrid" class="blf-grid">
             </div>
 
@@ -76,7 +82,7 @@
 
         <div id="configModal" class="modal-overlay hidden">
             <div class="sidebar-header" style="border:none;">
-                <h3>Configuration</h3>
+                <h3>SIP Configuration</h3>
                 <button class="config-btn" id="btnCloseConfig"><i class="fa-solid fa-xmark"></i></button>
             </div>
             
@@ -118,6 +124,27 @@
                 Save & Reconnect
             </button>
         </div>
+
+        <div id="blfModal" class="modal-overlay hidden" style="justify-content: center;">
+            <div class="sidebar-header" style="border:none;">
+                <h3>Manage Colleagues</h3>
+                <button class="config-btn" id="btnCloseBlf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">
+                Enter extension numbers separated by commas to monitor their status.
+            </p>
+
+            <div class="config-group">
+                <label>Extensions</label>
+                <input type="text" id="cfgBlfList" placeholder="e.g. 3001, 3002, 3003">
+            </div>
+
+            <button id="btnSaveBlf" class="btn btn-success" style="margin-top: 20px;">
+                <i class="fa-solid fa-check"></i> Save List
+            </button>
+        </div>
+
     </div>
 
     <div class="panel main-stage">

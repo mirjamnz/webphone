@@ -2,7 +2,7 @@ import { CONFIG } from './config.js';
 import { SettingsManager } from './settings.js';
 import { AudioManager } from './audio.js';
 import { PhoneEngine } from './phone.js';
-import { BlfManager } from './blf.js'; // NEW IMPORT
+import { BlfManager } from './blf.js'; 
 
 const settings = new SettingsManager();
 const audio = new AudioManager(settings);
@@ -15,10 +15,12 @@ const ui = {
         wss: document.getElementById('cfgWss'),
         mic: document.getElementById('cfgMic'),
         speaker: document.getElementById('cfgSpeaker'),
-        ringer: document.getElementById('cfgRinging')
+        ringer: document.getElementById('cfgRinging'),
+        blfList: document.getElementById('cfgBlfList') // Moved here
     },
     panels: {
         config: document.getElementById('configModal'),
+        blfConfig: document.getElementById('blfModal'), // NEW
         incoming: document.getElementById('incomingModal'),
         idle: document.getElementById('idleState'),
         active: document.getElementById('activeState'),
@@ -41,7 +43,7 @@ const ui = {
 let isConsulting = false; 
 let line1Num = "Line 1"; 
 let line2Num = "Line 2"; 
-let blfManager = null; // NEW VARIABLE
+let blfManager = null; 
 
 const phoneCallbacks = {
     onStatus: (state) => {
@@ -50,7 +52,6 @@ const phoneCallbacks = {
             ui.statusDot.className = 'status-indicator connected';
             ui.btnLogin.innerHTML = '<i class="fa-solid fa-rotate"></i> Reconnect';
             
-            // --- NEW: Initialize BLF after registration ---
             if (!blfManager) {
                 blfManager = new BlfManager(phone, settings);
                 blfManager.init();
@@ -155,15 +156,14 @@ function updateLineUI(activeLine) {
     }
 }
 
+// --- INIT ---
 window.addEventListener('DOMContentLoaded', async () => {
-    ui.inputs.user.value = settings.get('username');
-    ui.inputs.pass.value = settings.get('password');
-    ui.inputs.domain.value = settings.get('domain') || CONFIG.DEFAULT_DOMAIN;
-    ui.inputs.wss.value = settings.get('wssUrl') || CONFIG.DEFAULT_WSS;
+    // We don't populate inputs here anymore to keep them fresh when opening modal
     const devices = await audio.init();
     populateDeviceSelect(ui.inputs.mic, devices.inputs, settings.get('micId'));
     populateDeviceSelect(ui.inputs.speaker, devices.outputs, settings.get('speakerId'));
     populateDeviceSelect(ui.inputs.ringer, devices.outputs, settings.get('ringerId'));
+    
     if (settings.get('username') && settings.get('password')) {
         phone.connect();
     }
@@ -171,6 +171,21 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 ui.dndToggle.addEventListener('change', (e) => {
     phone.setDND(e.target.checked);
+});
+
+// --- SIP CONFIG MODAL ---
+document.getElementById('btnShowConfig').addEventListener('click', () => {
+    // Populate fields when opening
+    ui.inputs.user.value = settings.get('username') || '';
+    ui.inputs.pass.value = settings.get('password') || '';
+    ui.inputs.domain.value = settings.get('domain') || CONFIG.DEFAULT_DOMAIN;
+    ui.inputs.wss.value = settings.get('wssUrl') || CONFIG.DEFAULT_WSS;
+    
+    ui.panels.config.classList.remove('hidden');
+});
+
+document.getElementById('btnCloseConfig').addEventListener('click', () => {
+    ui.panels.config.classList.add('hidden');
 });
 
 document.getElementById('btnSaveConfig').addEventListener('click', () => {
@@ -183,10 +198,29 @@ document.getElementById('btnSaveConfig').addEventListener('click', () => {
         speakerId: ui.inputs.speaker.value,
         ringerId: ui.inputs.ringer.value
     });
-    document.getElementById('configModal').classList.add('hidden');
+    ui.panels.config.classList.add('hidden');
     phone.connect();
 });
 
+// --- NEW: BLF CONFIG MODAL ---
+document.getElementById('btnBlfConfig').addEventListener('click', () => {
+    ui.inputs.blfList.value = settings.get('blfList') || "3001, 3002, 3003, 3004";
+    ui.panels.blfConfig.classList.remove('hidden');
+});
+
+document.getElementById('btnCloseBlf').addEventListener('click', () => {
+    ui.panels.blfConfig.classList.add('hidden');
+});
+
+document.getElementById('btnSaveBlf').addEventListener('click', () => {
+    settings.save({
+        blfList: ui.inputs.blfList.value
+    });
+    ui.panels.blfConfig.classList.add('hidden');
+    window.location.reload(); // Reload to refresh subscriptions
+});
+
+// --- STANDARD EVENTS ---
 ui.btnCall.addEventListener('click', () => {
     const num = ui.dialString.value;
     if (!num) return;
