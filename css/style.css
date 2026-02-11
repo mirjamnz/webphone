@@ -519,3 +519,13 @@ input:checked + .slider:before {
     50% { opacity: 0.4; }
     100% { opacity: 1; }
 }
+
+/* --- BLF Offline State --- */
+.blf-chip.state-offline .blf-status {
+    background: #64748b; /* Slate-500 (Gray) */
+    box-shadow: none;
+    opacity: 0.5;
+}
+.blf-chip.state-offline .blf-label {
+    color: #64748b;
+}

@@ -6,17 +6,13 @@ export class BlfManager {
         this.settings = settings;
         this.subscriptions = new Map();
         
-        // Configuration: List of extensions to monitor
-        // In a real app, this would come from a database or settings
+        // Extensions to monitor
         this.monitoredExtensions = ['3001', '3002', '3003', '3004']; 
     }
 
     init() {
         if (!this.phone.userAgent) return;
-        
-        console.log("Initializing BLF Subscriptions...");
         this.renderPlaceholderUI();
-
         this.monitoredExtensions.forEach(ext => {
             this.subscribeTo(ext);
         });
@@ -29,7 +25,7 @@ export class BlfManager {
 
         this.monitoredExtensions.forEach(ext => {
             const btn = document.createElement('div');
-            btn.className = 'blf-chip state-unknown';
+            btn.className = 'blf-chip state-offline'; // Default to Gray
             btn.id = `blf-${ext}`;
             btn.innerHTML = `
                 <div class="blf-status"></div>
@@ -57,11 +53,12 @@ export class BlfManager {
         const target = SIP.UserAgent.makeURI(`sip:${extension}@${domain}`);
         if (!target) return;
 
-        const subscriber = new SIP.Subscriber(this.phone.userAgent, target, 'dialog', {
+        // FIXED: Use 'presence' (PIDF) instead of 'dialog' to detect Offline status
+        const subscriber = new SIP.Subscriber(this.phone.userAgent, target, 'presence', {
             expires: 3600,
             extraHeaders: [
-                `Accept: application/dialog-info+xml`,
-                `Supported: dialog-info+xml`
+                `Accept: application/pidf+xml`,
+                `Supported: pidf+xml`
             ]
         });
 
@@ -69,7 +66,7 @@ export class BlfManager {
             onNotify: (notification) => {
                 const body = notification.request.body;
                 if (body) {
-                    this.parseNotify(extension, body);
+                    this.parsePidf(extension, body);
                 }
                 notification.accept();
             }
@@ -79,39 +76,40 @@ export class BlfManager {
         this.subscriptions.set(extension, subscriber);
     }
 
-    parseNotify(extension, xmlBody) {
+    // FIXED: Parser for PIDF+XML (RFC 3863)
+    parsePidf(extension, xmlBody) {
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlBody, "text/xml");
         
-        // RFC 4235: Look for <state> inside <dialog>
-        // state can be: 'trying', 'proceeding', 'early', 'confirmed', 'terminated'
-        
-        const stateNode = xmlDoc.getElementsByTagName("state")[0];
-        let state = 'terminated'; // Default to Idle
-        
-        if (stateNode) {
-            state = stateNode.textContent;
-        }
+        // 1. Check <basic> status (open = Online, closed = Offline)
+        const basicNode = xmlDoc.getElementsByTagName("basic")[0];
+        if (!basicNode) return;
 
-        // Check specifically for "early" (Ringing) or "confirmed" (Talking)
-        let uiState = 'available';
-        let label = 'Available';
+        const basicStatus = basicNode.textContent;
+        let uiState = 'offline';
+        let label = 'Offline';
 
-        if (state === 'early') {
-            uiState = 'ringing';
-            label = 'Ringing';
-        } else if (state === 'confirmed') {
-            uiState = 'talking';
-            label = 'Busy';
-        } else if (state === 'terminated') {
+        if (basicStatus === 'open') {
             uiState = 'available';
             label = 'Available';
-        }
 
-        // Note: SIP dialog-info doesn't easily detect explicit "DND" (Do Not Disturb) 
-        // unless the server sends a specific note. 
-        // Usually DND just looks like "Terminated" (Idle) or "Confirmed" (Busy) depending on PBX.
-        
+            // 2. Check <note> or <show> for Busy/Ringing details
+            // Asterisk sends notes like "Ready", "On the phone", "Ringing"
+            const noteNode = xmlDoc.getElementsByTagName("note")[0];
+            if (noteNode) {
+                const note = noteNode.textContent.toLowerCase();
+                
+                if (note.includes('ringing')) {
+                    uiState = 'ringing';
+                    label = 'Ringing';
+                } else if (note.includes('phone') || note.includes('busy') || note.includes('in use')) {
+                    uiState = 'talking';
+                    label = 'Busy';
+                }
+            }
+        } 
+        // If 'closed', we leave it as 'offline' (Gray)
+
         this.updateUI(extension, uiState, label);
     }
 
@@ -119,10 +117,11 @@ export class BlfManager {
         const el = document.getElementById(`blf-${ext}`);
         if (!el) return;
 
-        // Reset classes
-        el.className = 'blf-chip';
-        el.classList.add(`state-${state}`);
+        // Clear all state classes
+        el.classList.remove('state-offline', 'state-available', 'state-ringing', 'state-talking', 'state-unknown');
         
+        // Add new state
+        el.classList.add(`state-${state}`);
         el.querySelector('.blf-label').innerText = label;
     }
 }
