@@ -10,10 +10,49 @@
 </head>
 <body>
 
-<div class="app-container">
+<div id="loginPage" class="login-overlay">
+    <div class="login-card">
+        <div class="login-logo">
+            <i class="fa-solid fa-headset"></i>
+        </div>
+        <h2>Welcome to BDL-PBX</h2>
+        <p>Please sign in to access your phone extension.</p>
+        
+        <div class="login-form">
+            <div class="input-group">
+                <label>Extension</label>
+                <input type="text" id="loginUser" placeholder="e.g. 3001">
+            </div>
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" id="loginPass" placeholder="••••••••">
+            </div>
+            
+            <div class="advanced-toggle" id="btnToggleAdvanced">
+                <i class="fa-solid fa-sliders"></i> Server Settings
+            </div>
+
+            <div id="loginAdvanced" class="hidden">
+                <div class="input-group">
+                    <label>Domain</label>
+                    <input type="text" id="loginDomain">
+                </div>
+                <div class="input-group">
+                    <label>WSS URL</label>
+                    <input type="text" id="loginWss">
+                </div>
+            </div>
+
+            <button id="btnDoLogin" class="btn btn-primary full-width" style="margin-top: 20px; font-size: 1rem;">
+                Sign In
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="mainApp" class="app-container hidden">
     
     <div class="panel sidebar">
-        
         <div class="sidebar-header">
             <h3><i class="fa-solid fa-headset"></i> Agent Panel</h3>
             <button class="config-btn" id="btnShowConfig" title="SIP Settings">
@@ -38,8 +77,7 @@
             </button>
         </div>
 
-        <div id="blfGrid" class="blf-grid">
-            </div>
+        <div id="blfGrid" class="blf-grid"></div>
 
         <div class="status-card">
             <div>
@@ -130,16 +168,13 @@
                 <h3>Manage Colleagues</h3>
                 <button class="config-btn" id="btnCloseBlf"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            
             <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">
-                Enter extension numbers separated by commas to monitor their status.
+                Enter extension numbers separated by commas.
             </p>
-
             <div class="config-group">
                 <label>Extensions</label>
                 <input type="text" id="cfgBlfList" placeholder="e.g. 3001, 3002, 3003">
             </div>
-
             <button id="btnSaveBlf" class="btn btn-success" style="margin-top: 20px;">
                 <i class="fa-solid fa-check"></i> Save List
             </button>
@@ -148,7 +183,6 @@
     </div>
 
     <div class="panel main-stage">
-        
         <div id="idleState" class="call-info">
             <i class="fa-solid fa-phone-volume" style="font-size: 4rem; color: var(--border); margin-bottom: 20px;"></i>
             <h2 style="color: var(--text-muted)">Ready for calls</h2>
@@ -188,7 +222,6 @@
             <button id="btnConsult" class="ctrl-btn" title="Consult / Warm Transfer">
                 <i class="fa-solid fa-users-gear"></i>
             </button>
-            
             <button id="btnMute" class="ctrl-btn mute" title="Mute">
                 <i class="fa-solid fa-microphone-slash"></i>
             </button>
@@ -201,7 +234,6 @@
         </div>
 
         <div id="consultControls" class="glass-panel hidden">
-            
             <div class="line-tabs">
                 <button id="btnLine1" class="tab-btn held-line">
                     <i class="fa-solid fa-user"></i> <span>Customer (Held)</span>
@@ -210,7 +242,6 @@
                     <i class="fa-solid fa-user-doctor"></i> <span>Colleague (Active)</span>
                 </button>
             </div>
-
             <div class="action-row">
                 <button id="btnMerge" class="btn btn-warning" style="color: black;">
                     <i class="fa-solid fa-users-line"></i> Merge
@@ -219,7 +250,6 @@
                     <i class="fa-solid fa-check"></i> Transfer
                 </button>
             </div>
-
             <button id="btnCancelConsult" class="btn btn-danger full-width">
                 <i class="fa-solid fa-xmark"></i> End Consultation (Return to Caller)
             </button>

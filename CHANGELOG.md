@@ -56,8 +56,13 @@ All notable changes to the WebRTC Call Center project will be documented in this
 - **Audio Bridge:** Implemented client-side audio mixing (Track Grafting) to enable 3-Way Conferencing without server-side bridges.
 - **Colleague Management UI:** Added a dedicated modal for managing Monitored Extensions (BLF), separate from the technical SIP configuration.
 - **Edit Button:** Added an "Edit" button directly to the Colleagues header for quick access.
+### Added
+- **Login Splash Screen:** Implemented a professional "Welcome" overlay that hides the main interface until authentication is complete.
+- **Auto-Login:** The app now remembers credentials and bypasses the splash screen on reload if a valid session exists.
+- **Advanced Settings Toggle:** Moved technical settings (Domain/WSS) into a collapsible "Advanced" section on the login screen to simplify the initial user experience.
 
 ### Changed
+- **Initialization Logic:** Refactored startup sequence to check for stored credentials before attempting to connect to the SIP server.
 - **Configuration UX:** Moved the "Monitored Extensions" input out of the main SIP Settings modal to prevent accidental technical changes.
 - **State Management:** Settings modals now correctly re-populate with saved values every time they are opened, fixing an issue where fields appeared empty.
 

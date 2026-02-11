@@ -6,8 +6,17 @@ import { BlfManager } from './blf.js';
 
 const settings = new SettingsManager();
 const audio = new AudioManager(settings);
+
 const ui = {
     dialString: document.getElementById('dialString'),
+    loginPage: document.getElementById('loginPage'),
+    mainApp: document.getElementById('mainApp'),
+    loginInputs: {
+        user: document.getElementById('loginUser'),
+        pass: document.getElementById('loginPass'),
+        domain: document.getElementById('loginDomain'),
+        wss: document.getElementById('loginWss')
+    },
     inputs: {
         user: document.getElementById('cfgUser'),
         pass: document.getElementById('cfgPass'),
@@ -16,11 +25,11 @@ const ui = {
         mic: document.getElementById('cfgMic'),
         speaker: document.getElementById('cfgSpeaker'),
         ringer: document.getElementById('cfgRinging'),
-        blfList: document.getElementById('cfgBlfList') // Moved here
+        blfList: document.getElementById('cfgBlfList')
     },
     panels: {
         config: document.getElementById('configModal'),
-        blfConfig: document.getElementById('blfModal'), // NEW
+        blfConfig: document.getElementById('blfModal'),
         incoming: document.getElementById('incomingModal'),
         idle: document.getElementById('idleState'),
         active: document.getElementById('activeState'),
@@ -158,29 +167,75 @@ function updateLineUI(activeLine) {
 
 // --- INIT ---
 window.addEventListener('DOMContentLoaded', async () => {
-    // We don't populate inputs here anymore to keep them fresh when opening modal
+    
+    // 1. Setup Audio & Defaults
     const devices = await audio.init();
     populateDeviceSelect(ui.inputs.mic, devices.inputs, settings.get('micId'));
     populateDeviceSelect(ui.inputs.speaker, devices.outputs, settings.get('speakerId'));
     populateDeviceSelect(ui.inputs.ringer, devices.outputs, settings.get('ringerId'));
     
-    if (settings.get('username') && settings.get('password')) {
+    // 2. Pre-fill Advanced Settings in Login
+    ui.loginInputs.domain.value = settings.get('domain') || CONFIG.DEFAULT_DOMAIN;
+    ui.loginInputs.wss.value = settings.get('wssUrl') || CONFIG.DEFAULT_WSS;
+
+    // 3. CHECK LOGIN STATUS
+    const savedUser = settings.get('username');
+    const savedPass = settings.get('password');
+
+    if (savedUser && savedPass) {
+        // Logged In -> Go straight to app
+        ui.loginPage.classList.add('hidden');
+        ui.mainApp.classList.remove('hidden');
         phone.connect();
+    } else {
+        // Not Logged In -> Show Splash
+        ui.loginPage.classList.remove('hidden');
+        ui.mainApp.classList.add('hidden');
     }
+});
+
+// --- LOGIN PAGE LOGIC ---
+document.getElementById('btnToggleAdvanced').addEventListener('click', () => {
+    document.getElementById('loginAdvanced').classList.toggle('hidden');
+});
+
+document.getElementById('btnDoLogin').addEventListener('click', () => {
+    const user = ui.loginInputs.user.value;
+    const pass = ui.loginInputs.pass.value;
+    const domain = ui.loginInputs.domain.value || CONFIG.DEFAULT_DOMAIN;
+    const wss = ui.loginInputs.wss.value || CONFIG.DEFAULT_WSS;
+
+    if (!user || !pass) {
+        alert("Please enter extension and password");
+        return;
+    }
+
+    // Save credentials
+    settings.save({
+        username: user,
+        password: pass,
+        domain: domain,
+        wssUrl: wss
+    });
+
+    // Switch UI
+    ui.loginPage.classList.add('hidden');
+    ui.mainApp.classList.remove('hidden');
+    
+    // Connect
+    phone.connect();
 });
 
 ui.dndToggle.addEventListener('change', (e) => {
     phone.setDND(e.target.checked);
 });
 
-// --- SIP CONFIG MODAL ---
+// --- CONFIG MODALS ---
 document.getElementById('btnShowConfig').addEventListener('click', () => {
-    // Populate fields when opening
     ui.inputs.user.value = settings.get('username') || '';
     ui.inputs.pass.value = settings.get('password') || '';
     ui.inputs.domain.value = settings.get('domain') || CONFIG.DEFAULT_DOMAIN;
     ui.inputs.wss.value = settings.get('wssUrl') || CONFIG.DEFAULT_WSS;
-    
     ui.panels.config.classList.remove('hidden');
 });
 
@@ -202,7 +257,6 @@ document.getElementById('btnSaveConfig').addEventListener('click', () => {
     phone.connect();
 });
 
-// --- NEW: BLF CONFIG MODAL ---
 document.getElementById('btnBlfConfig').addEventListener('click', () => {
     ui.inputs.blfList.value = settings.get('blfList') || "3001, 3002, 3003, 3004";
     ui.panels.blfConfig.classList.remove('hidden');
@@ -213,11 +267,9 @@ document.getElementById('btnCloseBlf').addEventListener('click', () => {
 });
 
 document.getElementById('btnSaveBlf').addEventListener('click', () => {
-    settings.save({
-        blfList: ui.inputs.blfList.value
-    });
+    settings.save({ blfList: ui.inputs.blfList.value });
     ui.panels.blfConfig.classList.add('hidden');
-    window.location.reload(); // Reload to refresh subscriptions
+    window.location.reload();
 });
 
 // --- STANDARD EVENTS ---
