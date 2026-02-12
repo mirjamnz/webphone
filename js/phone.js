@@ -8,12 +8,15 @@ export class PhoneEngine {
         this.callbacks = callbacks;   
         
         this.userAgent = null;
-        this.session = null;       // Line 1
+        this.session = null;        // Line 1
         this.consultSession = null; // Line 2
         this.registerer = null;
         this.isHeld = false;
-        this.dnd = false;          // Do Not Disturb State
+        this.dnd = false;           // Do Not Disturb State
         this.confCtx = null;
+        
+        // Timer for Keep-Alive Pings
+        this.keepAliveTimer = null; 
     }
 
     setDND(state) {
@@ -38,12 +41,17 @@ export class PhoneEngine {
         
         this.userAgent = new SIP.UserAgent({
             uri: uri,
-            transportOptions: { server: wss },
+            transportOptions: { 
+                server: wss,
+                // Native SIP.js Keep-Alive (backup)
+                keepAliveInterval: 30 
+            },
             authorizationUsername: user,
             authorizationPassword: pass,
             delegate: {
                 onInvite: (invitation) => this.handleIncoming(invitation),
                 onDisconnect: (error) => {
+                    this.stopKeepAlive(); // Stop manual pings
                     this.callbacks.onStatus('Disconnected');
                 }
             }
@@ -51,15 +59,49 @@ export class PhoneEngine {
 
         await this.userAgent.start();
         this.registerer = new SIP.Registerer(this.userAgent);
-        this.registerer.stateChange.addListener((state) => this.callbacks.onStatus(state));
+        
+        this.registerer.stateChange.addListener((state) => {
+            this.callbacks.onStatus(state);
+            if (state === 'Registered') {
+                this.startKeepAlive(); // Start manual pings
+            }
+        });
+        
         await this.registerer.register();
     }
 
     async disconnect() {
+        this.stopKeepAlive();
         if (this.registerer) await this.registerer.unregister();
         if (this.userAgent) await this.userAgent.stop();
         this.userAgent = null;
         this.session = null;
+    }
+
+    // --- Keep Alive Logic (Prevents NAT Timeout) ---
+    startKeepAlive() {
+        this.stopKeepAlive(); // Clear existing to be safe
+        console.log("Starting Keep-Alive Pings...");
+        
+        // Ping every 30 seconds
+        this.keepAliveTimer = setInterval(() => {
+            if (this.userAgent && this.userAgent.transport.isConnected()) {
+                // Sending a lightweight OPTIONS request to the server
+                // This forces traffic over the socket, keeping the router port open.
+                const registrarURI = SIP.UserAgent.makeURI(`sip:${this.settings.get('domain')}`);
+                // Fire and forget message to generate traffic
+                const pinger = new SIP.Messager(this.userAgent, registrarURI, "Ping", "text/plain");
+                pinger.message(); 
+            }
+        }, 30000);
+    }
+
+    stopKeepAlive() {
+        if (this.keepAliveTimer) {
+            clearInterval(this.keepAliveTimer);
+            this.keepAliveTimer = null;
+            console.log("Stopped Keep-Alive Pings.");
+        }
     }
 
     // --- Incoming Logic (DND & Call Waiting) ---

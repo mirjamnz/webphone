@@ -72,3 +72,9 @@ All notable changes to the WebRTC Call Center project will be documented in this
 ### Fixed
 - **BLF Presence Logic:** Switched SIP subscription mode from `dialog` to `presence` (PIDF+XML). This correctly distinguishes between 'Offline' (Gray) and 'Available' (Green), fixing the issue where unregistered extensions appeared as Available.
 - **Dialplan Hints:** Updated Asterisk dialplan to place hints in a shared context (`[blf_hints]`) ensuring both internal agents and external trunks can subscribe to status updates properly.
+
+## [1.3.1] - 2026-02-12
+### Fixed
+- **Database Connectivity:** Resolved `invalid input syntax for type uuid` error in Asterisk CDRs. Replaced configuration placeholder with valid Tenant UUID in `extensions.conf`.
+- **Connection Stability:** Fixed NAT timeouts where the client would disconnect silently after ~60 seconds. Implemented a SIP Keep-Alive mechanism that pings the server every 30 seconds.
+- **Configuration:** Updated `config.js` to include `KEEP_ALIVE_INTERVAL` and prepared `CDR_API_URL` for upcoming history features.
