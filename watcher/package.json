@@ -1,0 +1,27 @@
+{
+  "name": "asterisk-ami-watcher",
+  "version": "1.0.0",
+  "description": "AMI Watcher Service for WebRTC Call Center - Real-time supervisor features via Socket.io",
+  "main": "watcher.js",
+  "type": "module",
+  "scripts": {
+    "start": "node watcher.js",
+    "dev": "node --watch watcher.js"
+  },
+  "keywords": [
+    "asterisk",
+    "ami",
+    "socket.io",
+    "call-center",
+    "supervisor"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "asterisk-manager": "^0.1.16",
+    "socket.io": "^4.7.2",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5"
+  }
+}
+

@@ -6,7 +6,8 @@ import { PhoneEngine } from './phone.js';
 import { BlfManager } from './blf.js';
 import { UserManager } from './user.js';
 import { QueueManager } from './queue.js';
-import { RecordingsManager } from './recordings.js'; 
+import { RecordingsManager } from './recordings.js';
+import { SupervisorManager } from './supervisor.js'; 
 
 const settings = new SettingsManager();
 
@@ -153,13 +154,17 @@ const queueManager = new QueueManager(phone, userManager, settings);
 // Initialize Recordings Manager
 const recordingsManager = new RecordingsManager(userManager);
 
+// Initialize Supervisor Manager (connects to Socket.io if supervisor)
+const supervisorManager = new SupervisorManager(phone, userManager);
+
 window.app = {
     callSpecial: (num) => {
         phone.call(num).catch(e => alert(e.message));
     },
     user: userManager,
     queue: queueManager,
-    recordings: recordingsManager
+    recordings: recordingsManager,
+    supervisor: supervisorManager
 };
 
 function setCallButtonToConsultMode() {
@@ -225,6 +230,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     // Initialize supervisor features if applicable
     if (userManager.hasRole('supervisor')) {
         renderQueueList();
+        // Initialize Socket.io connection for supervisor
+        supervisorManager.initialize();
     }
     
     phone.connect();
@@ -272,6 +279,10 @@ document.getElementById('btnDoLogin').addEventListener('click', async () => {
     // Initialize supervisor features if applicable
     if (userManager.hasRole('supervisor')) {
         renderQueueList();
+        // Initialize Socket.io connection for supervisor
+        supervisorManager.initialize();
+        // Setup supervisor dashboard callbacks
+        setupSupervisorDashboard();
     }
     
     // Connect
@@ -575,9 +586,24 @@ function updateUIForRole(role) {
         el.style.display = isSupervisor ? 'none' : '';
     });
     
+    // Show supervisor dashboard instead of idle state
+    const supervisorDashboard = document.getElementById('supervisorDashboard');
+    const idleState = document.getElementById('idleState');
+    if (isSupervisor && supervisorDashboard) {
+        supervisorDashboard.classList.remove('hidden');
+        if (idleState) idleState.classList.add('hidden');
+    } else {
+        if (supervisorDashboard) supervisorDashboard.classList.add('hidden');
+        if (idleState) idleState.classList.remove('hidden');
+    }
+    
     // Update sidebar header with role badge
     const sidebarHeader = document.querySelector('.sidebar-header h3');
     if (sidebarHeader && role !== 'agent') {
+        // Remove existing badge if any
+        const existingBadge = sidebarHeader.querySelector('.role-badge');
+        if (existingBadge) existingBadge.remove();
+        
         const badge = document.createElement('span');
         badge.className = 'role-badge';
         badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
@@ -608,3 +634,158 @@ document.getElementById('btnRedialLast').addEventListener('click', () => {
         alert("No last number found.");
     }
 });
+
+/**
+ * Setup supervisor dashboard with real-time updates
+ */
+function setupSupervisorDashboard() {
+    // Setup callbacks for real-time updates
+    supervisorManager.setOnActiveCallsUpdate((calls) => {
+        renderActiveCalls(calls);
+        document.getElementById('statActiveCalls').textContent = calls.length;
+    });
+
+    supervisorManager.setOnAgentStatusUpdate((agents) => {
+        renderAgents(agents);
+        document.getElementById('statAgents').textContent = agents.length;
+    });
+
+    supervisorManager.setOnQueueStatsUpdate((queues) => {
+        renderQueues(queues);
+        document.getElementById('statQueues').textContent = queues.length;
+    });
+
+    // Setup tab switching
+    document.querySelectorAll('.dashboard-tabs .tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tab = btn.getAttribute('data-tab');
+            switchTab(tab);
+        });
+    });
+}
+
+function switchTab(tabName) {
+    // Update tab buttons
+    document.querySelectorAll('.dashboard-tabs .tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-tab') === tabName);
+    });
+    
+    // Update tab content
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.toggle('active', content.id === `tab${tabName.charAt(0).toUpperCase() + tabName.slice(1)}`);
+    });
+}
+
+function renderActiveCalls(calls) {
+    const container = document.getElementById('activeCallsList');
+    if (!container) return;
+
+    if (calls.length === 0) {
+        container.innerHTML = '<div class="empty-state">No active calls</div>';
+        return;
+    }
+
+    container.innerHTML = '';
+    calls.forEach(call => {
+        const item = document.createElement('div');
+        item.className = 'supervisor-call-item';
+        const duration = call.duration || Math.floor((new Date() - new Date(call.startTime)) / 1000);
+        item.innerHTML = `
+            <div class="call-info">
+                <div class="call-header">
+                    <span class="call-agent"><i class="fa-solid fa-user"></i> ${call.agent || call.src || 'Unknown'}</span>
+                    <span class="call-status ${call.answered ? 'answered' : 'ringing'}">${call.answered ? 'Answered' : 'Ringing'}</span>
+                </div>
+                <div class="call-parties">${call.callerid || call.caller || 'Unknown'} → ${call.destination || call.called || 'Unknown'}</div>
+                <div class="call-meta">Duration: ${formatDuration(duration)} • ${call.state || 'Active'}</div>
+            </div>
+            <div class="call-actions">
+                <button class="btn-icon-only monitor-btn" data-agent="${call.agent || call.src}" title="Monitor (Listen Only)">
+                    <i class="fa-solid fa-ear-listen"></i>
+                </button>
+                <button class="btn-icon-only whisper-btn" data-agent="${call.agent || call.src}" title="Whisper (Talk to Agent)">
+                    <i class="fa-solid fa-comment-dots"></i>
+                </button>
+                <button class="btn-icon-only barge-btn" data-agent="${call.agent || call.src}" title="Barge (Join Call)">
+                    <i class="fa-solid fa-phone"></i>
+                </button>
+            </div>
+        `;
+
+        item.querySelector('.monitor-btn').addEventListener('click', () => {
+            supervisorManager.monitorCall(call.agent || call.src, call.uniqueid);
+        });
+        item.querySelector('.whisper-btn').addEventListener('click', () => {
+            supervisorManager.whisperToCall(call.agent || call.src);
+        });
+        item.querySelector('.barge-btn').addEventListener('click', () => {
+            supervisorManager.bargeIntoCall(call.agent || call.src);
+        });
+
+        container.appendChild(item);
+    });
+}
+
+function renderAgents(agents) {
+    const container = document.getElementById('agentsList');
+    if (!container) return;
+
+    if (agents.length === 0) {
+        container.innerHTML = '<div class="empty-state">No agents online</div>';
+        return;
+    }
+
+    container.innerHTML = '';
+    agents.forEach(agent => {
+        const item = document.createElement('div');
+        item.className = `supervisor-agent-item status-${agent.status}`;
+        item.innerHTML = `
+            <div class="agent-info">
+                <div class="agent-header">
+                    <span class="agent-extension"><i class="fa-solid fa-phone"></i> ${agent.extension}</span>
+                    <span class="agent-status-badge status-${agent.status}">${agent.status}</span>
+                </div>
+                <div class="agent-meta">
+                    ${agent.currentCall ? `On call: ${agent.currentCall}` : 'Available'}
+                    ${agent.callsToday ? ` • ${agent.callsToday} calls today` : ''}
+                </div>
+            </div>
+        `;
+        container.appendChild(item);
+    });
+}
+
+function renderQueues(queues) {
+    const container = document.getElementById('queuesList');
+    if (!container) return;
+
+    if (queues.length === 0) {
+        container.innerHTML = '<div class="empty-state">No queue data</div>';
+        return;
+    }
+
+    container.innerHTML = '';
+    queues.forEach(queue => {
+        const item = document.createElement('div');
+        item.className = 'supervisor-queue-item';
+        item.innerHTML = `
+            <div class="queue-info">
+                <div class="queue-header">
+                    <span class="queue-name"><i class="fa-solid fa-list"></i> ${queue.name}</span>
+                </div>
+                <div class="queue-stats">
+                    <span class="stat"><i class="fa-solid fa-clock"></i> ${queue.waiting || 0} waiting</span>
+                    <span class="stat"><i class="fa-solid fa-users"></i> ${queue.members || 0} members</span>
+                    <span class="stat"><i class="fa-solid fa-check-circle"></i> ${queue.available || 0} available</span>
+                </div>
+            </div>
+        `;
+        container.appendChild(item);
+    });
+}
+
+function formatDuration(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+}

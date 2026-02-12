@@ -6,6 +6,9 @@ export const CONFIG = {
     // API Configuration (For Call History)
     CDR_API_URL: "https://bdl-pbx.itnetworld.co.nz/api/cdr",
     
+    // Socket.io Configuration (For AMI Watcher)
+    SOCKET_IO_URL: "http://localhost:3001", // Change to your watcher service URL
+    
     // Retry connection interval (ms)
     RECONNECT_INTERVAL: 5000,
 

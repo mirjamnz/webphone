@@ -1,0 +1,25 @@
+{
+  "name": "webphone",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mirjamnz/webphone.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mirjamnz/webphone/issues"
+  },
+  "homepage": "https://github.com/mirjamnz/webphone#readme",
+  "description": "",
+  "dependencies": {
+    "asterisk-manager": "^0.2.0",
+    "dotenv": "^17.3.1",
+    "socket.io": "^4.8.3"
+  }
+}

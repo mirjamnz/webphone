@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebRTC Call Center</title>
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.4/dist/jquery.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="css/style.css">
 </head>
@@ -232,6 +233,51 @@
     </div>
 
     <div class="panel main-stage">
+        <!-- Supervisor Dashboard (shown when supervisor role) -->
+        <div id="supervisorDashboard" class="supervisor-dashboard hidden" data-role="supervisor">
+            <div class="dashboard-header">
+                <h2><i class="fa-solid fa-chart-line"></i> Supervisor Dashboard</h2>
+                <div class="dashboard-stats">
+                    <div class="stat-card">
+                        <div class="stat-value" id="statActiveCalls">0</div>
+                        <div class="stat-label">Active Calls</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="statAgents">0</div>
+                        <div class="stat-label">Agents</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="statQueues">0</div>
+                        <div class="stat-label">Queues</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="dashboard-tabs">
+                <button class="tab-btn active" data-tab="calls">Active Calls</button>
+                <button class="tab-btn" data-tab="agents">Agents</button>
+                <button class="tab-btn" data-tab="queues">Queues</button>
+            </div>
+            
+            <div class="dashboard-content">
+                <div id="tabCalls" class="tab-content active">
+                    <div id="activeCallsList" class="supervisor-list">
+                        <div class="empty-state">No active calls</div>
+                    </div>
+                </div>
+                <div id="tabAgents" class="tab-content">
+                    <div id="agentsList" class="supervisor-list">
+                        <div class="empty-state">No agents online</div>
+                    </div>
+                </div>
+                <div id="tabQueues" class="tab-content">
+                    <div id="queuesList" class="supervisor-list">
+                        <div class="empty-state">No queue data</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div id="idleState" class="call-info">
             <i class="fa-solid fa-phone-volume" style="font-size: 4rem; color: var(--border); margin-bottom: 20px;"></i>
             <h2 style="color: var(--text-muted)">Ready for calls</h2>

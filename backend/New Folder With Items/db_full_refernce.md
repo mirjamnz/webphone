@@ -1,3 +1,27 @@
+ ***************
+ 
+ SELECT *
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = 'asteriskdb'
+ORDER BY TABLE_NAME, ORDINAL_POSITION;
+asteriskdb=# 
+asteriskdb=# SELECT                                                                    
+    table_name,                                                                                                                                                 
+    column_name, 
+    data_type,                                                                                   
+    is_nullable, 
+    column_default
+FROM                                                               
+    information_schema.columns
+WHERE                                                                                                               
+    table_schema = 'public' -- Change to your schema name
+ORDER BY                                        
+    table_name,                                                                                  
+    ordinal_position
+    
+******************
+
+
 table_name     |        column_name        |          data_type          | is_nullable |             column_default             
 --------------------+---------------------------+-----------------------------+-------------+----------------------------------------
  alembic_version    | version_num               | character varying           | NO          | 
@@ -37,6 +61,9 @@ table_name     |        column_name        |          data_type          | is_nu
  ps_aors            | remove_existing           | USER-DEFINED                | YES         | 
  ps_aors            | tenant_id                 | uuid                        | YES         | 
  ps_aors            | contact                   | character varying           | YES         | 
+ ps_aors            | qualify_frequency         | integer                     | YES         | 
+ ps_aors            | qualify_timeout           | double precision            | YES         | 
+ ps_aors            | authenticate_qualify      | character varying           | YES         | 
  ps_auths           | id                        | character varying           | NO          | 
  ps_auths           | auth_type                 | character varying           | YES         | 
  ps_auths           | password                  | character varying           | YES         | 
@@ -109,3 +136,10 @@ table_name     |        column_name        |          data_type          | is_nu
  tenants            | id                        | uuid                        | NO          | gen_random_uuid()
  tenants            | name                      | character varying           | NO          | 
  tenants            | created_at                | timestamp without time zone | NO          | now()
+
+
+
+
+
+
+

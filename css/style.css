@@ -813,3 +813,200 @@ input:checked + .slider:before {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
 }
+
+/* --- Supervisor Dashboard Styles --- */
+.supervisor-dashboard {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    overflow: hidden;
+}
+
+.dashboard-header {
+    margin-bottom: 20px;
+}
+
+.dashboard-header h2 {
+    margin: 0 0 15px 0;
+    color: var(--text-main);
+    font-size: 1.5rem;
+}
+
+.dashboard-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.stat-card {
+    background: rgba(0,0,0,0.3);
+    padding: 15px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 5px;
+}
+
+.stat-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.dashboard-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.dashboard-tabs .tab-btn {
+    padding: 10px 20px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.dashboard-tabs .tab-btn:hover {
+    color: var(--text-main);
+}
+
+.dashboard-tabs .tab-btn.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+.dashboard-content {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.supervisor-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.supervisor-call-item,
+.supervisor-agent-item,
+.supervisor-queue-item {
+    background: rgba(0,0,0,0.2);
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.2s;
+}
+
+.supervisor-call-item:hover,
+.supervisor-agent-item:hover,
+.supervisor-queue-item:hover {
+    background: rgba(0,0,0,0.3);
+    border-color: var(--primary);
+}
+
+.call-info,
+.agent-info,
+.queue-info {
+    flex: 1;
+}
+
+.call-header,
+.agent-header,
+.queue-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.call-agent,
+.agent-extension,
+.queue-name {
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.call-status,
+.agent-status-badge {
+    font-size: 0.75rem;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+.call-status.answered {
+    background: var(--success);
+    color: white;
+}
+
+.call-status.ringing {
+    background: var(--warning);
+    color: black;
+}
+
+.agent-status-badge.status-available {
+    background: var(--success);
+    color: white;
+}
+
+.agent-status-badge.status-talking {
+    background: var(--danger);
+    color: white;
+}
+
+.agent-status-badge.status-ringing {
+    background: var(--warning);
+    color: black;
+}
+
+.agent-status-badge.status-offline {
+    background: var(--text-muted);
+    color: white;
+}
+
+.call-parties,
+.call-meta,
+.agent-meta {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.queue-stats {
+    display: flex;
+    gap: 15px;
+    margin-top: 8px;
+    font-size: 0.85rem;
+}
+
+.queue-stats .stat {
+    color: var(--text-muted);
+}
+
+.call-actions {
+    display: flex;
+    gap: 8px;
+}

@@ -18,6 +18,7 @@
  * - PhoneEngine (for SIP communication)
  * - UserManager (for role verification)
  * - CONFIG (for API URLs)
+ * - Socket.io client (for real-time AMI events)
  */
 
 import { CONFIG } from './config.js';
@@ -29,26 +30,154 @@ export class SupervisorManager {
         this.user = userManager;
         this.monitoringSessions = new Map(); // Track active monitoring sessions
         this.agentStatus = new Map(); // Cache agent status
+        this.socket = null; // Socket.io connection
+        this.activeCalls = []; // Real-time active calls from AMI
+        this.queues = []; // Real-time queue statistics
+        this.connected = false; // Track connection status
+        
+        // Note: Socket.io connection will be initiated after user role is determined
+        // Call initialize() after userManager.initializeFromExtension()
+    }
+
+    /**
+     * Initialize Socket.io connection (call this after user role is determined)
+     */
+    initialize() {
+        // Check if already connected
+        if (this.connected || this.socket?.connected) {
+            return;
+        }
+
+        // Initialize Socket.io connection if supervisor
+        if (this.user.canAccess('supervisor_monitor')) {
+            console.log('🔌 Initializing Socket.io connection for supervisor...');
+            this.connectSocketIO();
+        } else {
+            console.log('ℹ️  User does not have supervisor permissions, skipping Socket.io connection');
+        }
+    }
+
+    /**
+     * Connect to Socket.io server for real-time AMI events
+     */
+    connectSocketIO() {
+        // Check if Socket.io client is loaded
+        if (typeof io === 'undefined') {
+            console.error('❌ Socket.io client not loaded!');
+            console.warn('💡 Make sure <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script> is in index.html');
+            return;
+        }
+
+        const socketUrl = CONFIG.SOCKET_IO_URL || 'http://localhost:3001';
+        console.log(`🔌 Attempting to connect to AMI Watcher at ${socketUrl}...`);
+        
+        this.socket = io(socketUrl, {
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionAttempts: 5,
+            timeout: 5000
+        });
+
+        this.socket.on('connect', () => {
+            this.connected = true;
+            console.log('✅ Connected to AMI Watcher service');
+        });
+
+        this.socket.on('disconnect', () => {
+            this.connected = false;
+            console.warn('⚠️  Disconnected from AMI Watcher service');
+        });
+
+        this.socket.on('connect_error', (error) => {
+            console.error('❌ Socket.io connection error:', error.message);
+            console.log('💡 Make sure the AMI Watcher service is running on', socketUrl);
+        });
+
+        this.socket.on('ami:connected', () => {
+            console.log('✅ AMI connected to Asterisk');
+        });
+
+        this.socket.on('ami:disconnected', () => {
+            console.warn('⚠️  AMI disconnected from Asterisk');
+        });
+
+        // Receive active calls
+        this.socket.on('calls:active', (calls) => {
+            this.activeCalls = calls;
+            this.onActiveCallsUpdate?.(calls);
+        });
+
+        // Receive agent status
+        this.socket.on('agents:status', (agents) => {
+            agents.forEach(agent => {
+                this.agentStatus.set(agent.extension, agent);
+            });
+            this.onAgentStatusUpdate?.(agents);
+        });
+
+        // Receive queue statistics
+        this.socket.on('queues:stats', (queues) => {
+            this.queues = queues;
+            this.onQueueStatsUpdate?.(queues);
+        });
+
+        // Supervisor action responses
+        this.socket.on('supervisor:success', (data) => {
+            console.log(`Supervisor ${data.action} successful for ${data.agentExtension}`);
+            this.onSupervisorActionSuccess?.(data);
+        });
+
+        this.socket.on('supervisor:error', (data) => {
+            console.error(`Supervisor ${data.action} failed:`, data.error);
+            this.onSupervisorActionError?.(data);
+        });
+    }
+
+    /**
+     * Callback setters for UI updates
+     */
+    setOnActiveCallsUpdate(callback) {
+        this.onActiveCallsUpdate = callback;
+    }
+
+    setOnAgentStatusUpdate(callback) {
+        this.onAgentStatusUpdate = callback;
+    }
+
+    setOnQueueStatsUpdate(callback) {
+        this.onQueueStatsUpdate = callback;
+    }
+
+    setOnSupervisorActionSuccess(callback) {
+        this.onSupervisorActionSuccess = callback;
+    }
+
+    setOnSupervisorActionError(callback) {
+        this.onSupervisorActionError = callback;
     }
 
     /**
      * Monitor an active call (listen only, no audio to call)
+     * Uses Socket.io to send AMI command
      * @param {string} agentExtension - Extension of agent to monitor
-     * @param {string} callUniqueId - Unique ID of the call
+     * @param {string} callUniqueId - Unique ID of the call (optional)
      * @returns {Promise<boolean>} Success status
      */
-    async monitorCall(agentExtension, callUniqueId) {
+    async monitorCall(agentExtension, callUniqueId = null) {
         if (!this.user.canAccess('supervisor_monitor')) {
             throw new Error("Insufficient permissions for monitoring");
         }
 
+        if (!this.socket || !this.socket.connected) {
+            throw new Error("Not connected to AMI Watcher service");
+        }
+
         try {
-            // Asterisk Monitor: Use ChanSpy or Monitor application
-            // Common pattern: *1<extension> or use SIP Subscribe to dialog-info
-            const monitorExtension = `*1${agentExtension}`;
-            await this.phone.call(monitorExtension);
-            
-            console.log(`Monitoring call for agent ${agentExtension}`);
+            this.socket.emit('supervisor:monitor', {
+                agentExtension,
+                callUniqueId
+            });
             return true;
         } catch (error) {
             console.error("Monitor call failed:", error);
@@ -58,6 +187,7 @@ export class SupervisorManager {
 
     /**
      * Whisper to an active call (supervisor can talk to agent, not caller)
+     * Uses Socket.io to send AMI command
      * @param {string} agentExtension - Extension of agent
      * @returns {Promise<boolean>} Success status
      */
@@ -66,12 +196,14 @@ export class SupervisorManager {
             throw new Error("Insufficient permissions for whisper");
         }
 
+        if (!this.socket || !this.socket.connected) {
+            throw new Error("Not connected to AMI Watcher service");
+        }
+
         try {
-            // Asterisk Whisper: *2<extension>
-            const whisperExtension = `*2${agentExtension}`;
-            await this.phone.call(whisperExtension);
-            
-            console.log(`Whispering to agent ${agentExtension}`);
+            this.socket.emit('supervisor:whisper', {
+                agentExtension
+            });
             return true;
         } catch (error) {
             console.error("Whisper failed:", error);
@@ -81,6 +213,7 @@ export class SupervisorManager {
 
     /**
      * Barge into an active call (supervisor joins the conversation)
+     * Uses Socket.io to send AMI command
      * @param {string} agentExtension - Extension of agent
      * @returns {Promise<boolean>} Success status
      */
@@ -89,12 +222,14 @@ export class SupervisorManager {
             throw new Error("Insufficient permissions for barge");
         }
 
+        if (!this.socket || !this.socket.connected) {
+            throw new Error("Not connected to AMI Watcher service");
+        }
+
         try {
-            // Asterisk Barge: *3<extension>
-            const bargeExtension = `*3${agentExtension}`;
-            await this.phone.call(bargeExtension);
-            
-            console.log(`Barging into call for agent ${agentExtension}`);
+            this.socket.emit('supervisor:barge', {
+                agentExtension
+            });
             return true;
         } catch (error) {
             console.error("Barge failed:", error);
@@ -103,47 +238,27 @@ export class SupervisorManager {
     }
 
     /**
-     * Fetch active calls from API
-     * @returns {Promise<Array>} Array of active call objects
+     * Get active calls (from real-time Socket.io data)
+     * @returns {Array} Array of active call objects
      */
-    async getActiveCalls() {
-        try {
-            // TODO: Implement API endpoint: /api/active_calls
-            // For now, return mock structure
-            const response = await fetch(`${CONFIG.CDR_API_URL}/active_calls`);
-            
-            if (!response.ok) {
-                return [];
-            }
-            
-            const data = await response.json();
-            return Array.isArray(data) ? data : [];
-        } catch (error) {
-            console.error("Error fetching active calls:", error);
-            return [];
-        }
+    getActiveCalls() {
+        return this.activeCalls;
     }
 
     /**
-     * Get agent status for all agents
-     * @returns {Promise<Array>} Array of agent status objects
+     * Get agent status for all agents (from real-time Socket.io data)
+     * @returns {Array} Array of agent status objects
      */
-    async getAgentStatus() {
-        try {
-            // TODO: Implement API endpoint: /api/agent_status
-            // This could use BLF data or a dedicated endpoint
-            const response = await fetch(`${CONFIG.CDR_API_URL.replace('/cdr', '')}/ps_endpoints`);
-            
-            if (!response.ok) {
-                return [];
-            }
-            
-            const data = await response.json();
-            return Array.isArray(data) ? data : [];
-        } catch (error) {
-            console.error("Error fetching agent status:", error);
-            return [];
-        }
+    getAgentStatus() {
+        return Array.from(this.agentStatus.values());
+    }
+
+    /**
+     * Get queue statistics (from real-time Socket.io data)
+     * @returns {Array} Array of queue statistics objects
+     */
+    getQueueStats() {
+        return this.queues;
     }
 
     /**
