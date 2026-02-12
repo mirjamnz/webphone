@@ -1,3 +1,4 @@
+import { HistoryManager } from './history.js';
 import { CONFIG } from './config.js';
 import { SettingsManager } from './settings.js';
 import { AudioManager } from './audio.js';
@@ -5,6 +6,17 @@ import { PhoneEngine } from './phone.js';
 import { BlfManager } from './blf.js'; 
 
 const settings = new SettingsManager();
+
+// Initialize History
+const historyManager = new HistoryManager(settings, {
+    onRedial: (number) => {
+        ui.panels.history.classList.add('hidden'); // Close modal
+        ui.dialString.value = number;              // Fill dialer
+        // Optional: Call immediately
+        // phone.call(number).catch(e => alert(e.message)); 
+    }
+});
+
 const audio = new AudioManager(settings);
 
 const ui = {
@@ -33,7 +45,8 @@ const ui = {
         incoming: document.getElementById('incomingModal'),
         idle: document.getElementById('idleState'),
         active: document.getElementById('activeState'),
-        controls: document.getElementById('controlsBar')
+        controls: document.getElementById('controlsBar'),
+        history: document.getElementById('historyModal')
     },
     statusDot: document.getElementById('statusDot'),
     statusText: document.getElementById('statusText'),
@@ -72,6 +85,7 @@ const phoneCallbacks = {
     onIncoming: (caller, acceptCb, rejectCb) => {
         document.getElementById('incomingIdentity').innerText = caller;
         ui.panels.incoming.classList.remove('hidden');
+        
         const btnAnswer = document.getElementById('btnAnswer');
         const btnReject = document.getElementById('btnReject');
 
@@ -276,6 +290,10 @@ document.getElementById('btnSaveBlf').addEventListener('click', () => {
 ui.btnCall.addEventListener('click', () => {
     const num = ui.dialString.value;
     if (!num) return;
+    
+    // Save to history
+    historyManager.saveLastDialed(num);
+
     if (isConsulting) {
         line2Num = num; 
         phone.startConsultation(num).then(() => {
@@ -414,3 +432,24 @@ function startTimer() {
 function stopTimer() {
     clearInterval(timerInterval);
 }
+
+// --- HISTORY EVENTS ---
+document.getElementById('btnShowHistory').addEventListener('click', () => {
+    ui.panels.history.classList.remove('hidden');
+    historyManager.render('historyList');
+});
+
+document.getElementById('btnCloseHistory').addEventListener('click', () => {
+    ui.panels.history.classList.add('hidden');
+});
+
+document.getElementById('btnRedialLast').addEventListener('click', () => {
+    const lastNum = historyManager.getLastDialed();
+    if (lastNum) {
+        ui.panels.history.classList.add('hidden');
+        ui.dialString.value = lastNum;
+        phone.call(lastNum).catch(e => alert(e.message));
+    } else {
+        alert("No last number found.");
+    }
+});

@@ -53,10 +53,18 @@
 <div id="mainApp" class="app-container hidden">
     
     <div class="panel sidebar">
+        
         <div class="sidebar-header">
             <h3><i class="fa-solid fa-headset"></i> Agent Panel</h3>
             <button class="config-btn" id="btnShowConfig" title="SIP Settings">
                 <i class="fa-solid fa-gear"></i>
+            </button>
+        </div>
+        
+        <div class="dial-input-group">
+            <input type="text" id="dialString" placeholder="Enter Number..." autocomplete="off">
+            <button id="btnShowHistory" class="input-action-btn" title="History / Redial">
+                <i class="fa-solid fa-clock-rotate-left"></i>
             </button>
         </div>
 
@@ -88,8 +96,6 @@
                 <i class="fa-solid fa-power-off"></i> <span id="loginBtnText">Login</span>
             </button>
         </div>
-
-        <input type="text" id="dialString" placeholder="Enter Number..." autocomplete="off">
 
         <div class="dial-pad">
             <button class="digit-btn" data-digit="1">1</button>
@@ -180,6 +186,21 @@
             </button>
         </div>
 
+    </div> 
+    <div id="historyModal" class="modal-overlay hidden">
+        <div class="history-card"> 
+            <div class="history-header">
+                <h3 style="margin:0;"><i class="fa-solid fa-clock-rotate-left"></i> Recent Calls</h3>
+                <button class="config-btn" id="btnCloseHistory"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <div id="historyList" class="history-list">
+                </div>
+            
+            <button id="btnRedialLast" class="btn btn-primary full-width" style="margin-top: 15px;">
+                <i class="fa-solid fa-rotate-right"></i> <span id="redialLabel">Redial Last Number</span>
+            </button>
+        </div>
     </div>
 
     <div class="panel main-stage">

@@ -60,6 +60,18 @@ All notable changes to the WebRTC Call Center project will be documented in this
 - **Login Splash Screen:** Implemented a professional "Welcome" overlay that hides the main interface until authentication is complete.
 - **Auto-Login:** The app now remembers credentials and bypasses the splash screen on reload if a valid session exists.
 - **Advanced Settings Toggle:** Moved technical settings (Domain/WSS) into a collapsible "Advanced" section on the login screen to simplify the initial user experience.
+## [1.4.0] - 2026-02-12
+- **Call History:** New module (`history.js`) that fetches and displays recent calls from the Postgres CDR database.
+- **Redial Feature:**
+  - **Quick Redial:** "Redial Last Number" button updates dynamically with the last dialed number.
+  - **List Redial:** Specific "Call Again" buttons for every record in the history list.
+- **API Integration:** Implemented PostgREST-compatible filtering (`?or=(src.eq.x,dst.eq.x)`) to correctly retrieve inbound and outbound calls for the specific agent.
+
+### Changed
+- **UI Layout:**
+  - Integrated the History button directly into the Dial Pad input group for a cleaner, modern look.
+  - Redesigned the History Modal to be a responsive "card" overlay instead of a full-screen popup.
+  - Restored the Sidebar Panel wrapper in `index.html` to fix grid layout issues.
 
 ### Changed
 - **Initialization Logic:** Refactored startup sequence to check for stored credentials before attempting to connect to the SIP server.
@@ -78,3 +90,5 @@ All notable changes to the WebRTC Call Center project will be documented in this
 - **Database Connectivity:** Resolved `invalid input syntax for type uuid` error in Asterisk CDRs. Replaced configuration placeholder with valid Tenant UUID in `extensions.conf`.
 - **Connection Stability:** Fixed NAT timeouts where the client would disconnect silently after ~60 seconds. Implemented a SIP Keep-Alive mechanism that pings the server every 30 seconds.
 - **Configuration:** Updated `config.js` to include `KEEP_ALIVE_INTERVAL` and prepared `CDR_API_URL` for upcoming history features.
+- **API Security (CORS):** Resolved "Connection Failed" errors by updating Nginx to strip restrictive upstream headers and enforce permissive CORS rules for the `/api/` endpoint.
+- **Data Parsing:** Added logic to handle both array and object-wrapped (`{ data: [...] }`) JSON responses from the API.

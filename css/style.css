@@ -530,71 +530,85 @@ input:checked + .slider:before {
     color: #64748b;
 }
 
-/* --- LOGIN / SPLASH SCREEN --- */
-.login-overlay {
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: #0f172a; /* Match body bg */
-    z-index: 9999;
+/* --- Slick Input Group (Dialer + History) --- */
+.dial-input-group {
+    position: relative;
+    width: 100%;
+    margin-bottom: 15px;
+}
+
+.dial-input-group input {
+    width: 100%;
+    padding-right: 45px; /* Make room for the button */
+    margin-bottom: 0;    /* Remove default margin */
+    box-sizing: border-box;
+}
+
+.input-action-btn {
+    position: absolute;
+    right: 5px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    width: 35px;
+    height: 35px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-.login-card {
-    background: #1e293b;
-    padding: 40px;
-    border-radius: 20px;
-    border: 1px solid var(--border);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-    text-align: center;
-    width: 100%;
-    max-width: 400px;
-    animation: fadeIn 0.5s ease-out;
+.input-action-btn:hover {
+    color: var(--primary);
+    background: rgba(255, 255, 255, 0.05);
 }
 
-@keyframes fadeIn {
+/* --- Improved History Modal --- */
+#historyModal {
+    /* Center it properly */
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+}
+
+.history-card {
+    background: var(--bg-panel);
+    width: 90%;
+    max-width: 380px; /* Smaller, phone-like width */
+    max-height: 70vh; /* Don't take full height */
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    position: relative;
+    animation: slideUp 0.2s ease-out;
+}
+
+@keyframes slideUp {
     from { opacity: 0; transform: translateY(20px); }
     to { opacity: 1; transform: translateY(0); }
 }
 
-.login-logo {
-    font-size: 3.5rem;
-    color: var(--primary);
-    margin-bottom: 20px;
-    background: rgba(59, 130, 246, 0.1);
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
+/* Close button positioning inside the smaller card */
+.history-header {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    justify-content: center;
-    margin-left: auto;
-    margin-right: auto;
-}
-
-.login-card h2 {
-    margin: 0 0 10px 0;
-    color: white;
-}
-
-.login-card p {
-    color: var(--text-muted);
-    margin: 0 0 30px 0;
-    font-size: 0.95rem;
-}
-
-.input-group {
-    text-align: left;
     margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
 }
 
-.advanced-toggle {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    cursor: pointer;
-    margin: 15px 0;
-    text-decoration: underline;
-    transition: color 0.2s;
+/* Ensure the list scrolls if it gets too long */
+.history-list {
+    overflow-y: auto;
+    flex: 1; 
+    max-height: 50vh; /* Prevent taking up full screen */
+    padding-right: 5px;
 }
-.advanced-toggle:hover { color: var(--primary); }
