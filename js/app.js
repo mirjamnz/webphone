@@ -3,9 +3,15 @@ import { CONFIG } from './config.js';
 import { SettingsManager } from './settings.js';
 import { AudioManager } from './audio.js';
 import { PhoneEngine } from './phone.js';
-import { BlfManager } from './blf.js'; 
+import { BlfManager } from './blf.js';
+import { UserManager } from './user.js';
+import { QueueManager } from './queue.js';
+import { RecordingsManager } from './recordings.js'; 
 
 const settings = new SettingsManager();
+
+// Initialize User Manager
+const userManager = new UserManager(settings);
 
 // Initialize History
 const historyManager = new HistoryManager(settings, {
@@ -141,10 +147,19 @@ const phoneCallbacks = {
 
 const phone = new PhoneEngine(CONFIG, settings, audio, phoneCallbacks);
 
+// Initialize Queue Manager
+const queueManager = new QueueManager(phone, userManager, settings);
+
+// Initialize Recordings Manager
+const recordingsManager = new RecordingsManager(userManager);
+
 window.app = {
     callSpecial: (num) => {
         phone.call(num).catch(e => alert(e.message));
-    }
+    },
+    user: userManager,
+    queue: queueManager,
+    recordings: recordingsManager
 };
 
 function setCallButtonToConsultMode() {
@@ -200,7 +215,19 @@ window.addEventListener('DOMContentLoaded', async () => {
         // Logged In -> Go straight to app
         ui.loginPage.classList.add('hidden');
         ui.mainApp.classList.remove('hidden');
-        phone.connect();
+        
+    // Initialize user profile from extension
+    await userManager.initializeFromExtension(savedUser);
+    
+    // Update UI based on role
+    updateUIForRole(userManager.role);
+    
+    // Initialize supervisor features if applicable
+    if (userManager.hasRole('supervisor')) {
+        renderQueueList();
+    }
+    
+    phone.connect();
     } else {
         // Not Logged In -> Show Splash
         ui.loginPage.classList.remove('hidden');
@@ -213,7 +240,7 @@ document.getElementById('btnToggleAdvanced').addEventListener('click', () => {
     document.getElementById('loginAdvanced').classList.toggle('hidden');
 });
 
-document.getElementById('btnDoLogin').addEventListener('click', () => {
+document.getElementById('btnDoLogin').addEventListener('click', async () => {
     const user = ui.loginInputs.user.value;
     const pass = ui.loginInputs.pass.value;
     const domain = ui.loginInputs.domain.value || CONFIG.DEFAULT_DOMAIN;
@@ -235,6 +262,17 @@ document.getElementById('btnDoLogin').addEventListener('click', () => {
     // Switch UI
     ui.loginPage.classList.add('hidden');
     ui.mainApp.classList.remove('hidden');
+    
+    // Initialize user profile from extension
+    await userManager.initializeFromExtension(user);
+    
+    // Update UI based on role
+    updateUIForRole(userManager.role);
+    
+    // Initialize supervisor features if applicable
+    if (userManager.hasRole('supervisor')) {
+        renderQueueList();
+    }
     
     // Connect
     phone.connect();
@@ -285,6 +323,90 @@ document.getElementById('btnSaveBlf').addEventListener('click', () => {
     ui.panels.blfConfig.classList.add('hidden');
     window.location.reload();
 });
+
+// --- QUEUE MANAGEMENT EVENTS ---
+document.getElementById('btnQueueConfig')?.addEventListener('click', async () => {
+    const container = document.getElementById('queueConfigList');
+    if (!container) return;
+    
+    container.innerHTML = '<div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading queues...</div>';
+    
+    const queues = await queueManager.getAvailableQueues();
+    container.innerHTML = '';
+    
+    queues.forEach(queueName => {
+        const isLoggedIn = queueManager.isLoggedIn(queueName);
+        const item = document.createElement('div');
+        item.className = 'config-group';
+        item.innerHTML = `
+            <label style="display: flex; justify-content: space-between; align-items: center;">
+                <span>${queueName}</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" data-queue="${queueName}" ${isLoggedIn ? 'checked' : ''}>
+                    <span class="slider"></span>
+                </label>
+            </label>
+        `;
+        
+        item.querySelector('input').addEventListener('change', async (e) => {
+            const success = await queueManager.toggleQueue(queueName);
+            if (!success) {
+                e.target.checked = !e.target.checked; // Revert on failure
+                alert(`Failed to ${e.target.checked ? 'login' : 'logout'} from queue ${queueName}`);
+            } else {
+                renderQueueList(); // Refresh queue list
+            }
+        });
+        
+        container.appendChild(item);
+    });
+    
+    document.getElementById('queueModal').classList.remove('hidden');
+});
+
+document.getElementById('btnCloseQueue')?.addEventListener('click', () => {
+    document.getElementById('queueModal').classList.add('hidden');
+});
+
+/**
+ * Render the queue list in the sidebar
+ */
+async function renderQueueList() {
+    const container = document.getElementById('queueList');
+    if (!container) return;
+    
+    const queues = await queueManager.getAvailableQueues();
+    container.innerHTML = '';
+    
+    queues.forEach(queueName => {
+        const isLoggedIn = queueManager.isLoggedIn(queueName);
+        const item = document.createElement('div');
+        item.className = `queue-item ${isLoggedIn ? 'logged-in' : ''}`;
+        item.innerHTML = `
+            <div class="queue-info">
+                <div class="queue-name">${queueName}</div>
+                <div class="queue-status">${isLoggedIn ? 'Logged In' : 'Available'}</div>
+            </div>
+            <button class="queue-toggle ${isLoggedIn ? 'active' : ''}" data-queue="${queueName}">
+                ${isLoggedIn ? '<i class="fa-solid fa-check"></i>' : '<i class="fa-solid fa-plus"></i>'}
+            </button>
+        `;
+        
+        item.querySelector('.queue-toggle').addEventListener('click', async () => {
+            const success = await queueManager.toggleQueue(queueName);
+            if (success) {
+                renderQueueList(); // Refresh
+            } else {
+                alert(`Failed to toggle queue ${queueName}`);
+            }
+        });
+        
+        container.appendChild(item);
+    });
+}
+
+// Initialize supervisor features when role is detected
+// Note: This runs after DOMContentLoaded, so we check after user initialization
 
 // --- STANDARD EVENTS ---
 ui.btnCall.addEventListener('click', () => {
@@ -431,6 +553,39 @@ function startTimer() {
 
 function stopTimer() {
     clearInterval(timerInterval);
+}
+
+/**
+ * Update UI elements based on user role
+ * Shows/hides features based on permissions
+ * @param {string} role - User role ('agent' | 'supervisor' | 'admin')
+ */
+function updateUIForRole(role) {
+    const isSupervisor = role === 'supervisor' || role === 'admin';
+    
+    // Show/hide supervisor features
+    const supervisorElements = document.querySelectorAll('[data-role="supervisor"]');
+    supervisorElements.forEach(el => {
+        el.style.display = isSupervisor ? '' : 'none';
+    });
+    
+    // Show/hide agent-only features
+    const agentElements = document.querySelectorAll('[data-role="agent"]');
+    agentElements.forEach(el => {
+        el.style.display = isSupervisor ? 'none' : '';
+    });
+    
+    // Update sidebar header with role badge
+    const sidebarHeader = document.querySelector('.sidebar-header h3');
+    if (sidebarHeader && role !== 'agent') {
+        const badge = document.createElement('span');
+        badge.className = 'role-badge';
+        badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+        badge.style.cssText = 'font-size: 0.7rem; padding: 2px 8px; background: var(--primary); border-radius: 12px; margin-left: 8px;';
+        sidebarHeader.appendChild(badge);
+    }
+    
+    console.log(`UI updated for role: ${role}`);
 }
 
 // --- HISTORY EVENTS ---

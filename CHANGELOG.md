@@ -4,11 +4,45 @@ All notable changes to the WebRTC Call Center project will be documented in this
 
 ## [Unreleased]
 ### Planned
-- Blind Transfer functionality.
-- Warm/Attended Transfer functionality.
-- Conference Calling (3-Way).
-- Busy Lamp Field (BLF) for agent status.
-- DND (Do Not Disturb) toggle.
+- Enhanced call history filtering and search
+- Export call history to CSV/Excel
+- Real-time supervisor dashboard
+- Agent performance metrics
+- Advanced queue statistics
+
+## [2.0.0] - 2026-02-12
+### Added
+- **Role-Based System:** Complete user role management (agent/supervisor/admin) with permission-based feature access
+- **User Profile Module:** User profile management with role detection and preferences storage (`user.js`)
+- **Queue Management:** Full queue login/logout functionality with visual status indicators (`queue.js`)
+- **Recordings Access:** Call recordings module for listing, playing, and downloading recordings (`recordings.js`)
+- **Supervisor Features:** Supervisor monitoring module with monitor, whisper, and barge capabilities (`supervisor.js`)
+- **Enhanced UI:**
+  - Role-based UI rendering (shows/hides features based on permissions)
+  - Professional queue management interface
+  - Improved animations and loading states
+  - Responsive design improvements for mobile devices
+  - Role badges in sidebar header
+- **Call History Enhancements:**
+  - Recording playback buttons in history list
+  - Unique ID tracking for recordings lookup
+  - Enhanced history item actions
+- **Modular Architecture:**
+  - New modules: `user.js`, `queue.js`, `recordings.js`, `supervisor.js`
+  - Clean separation of concerns
+  - Easy to extend and maintain
+
+### Changed
+- **Code Organization:** Improved modular structure with clear documentation
+- **UI Layout:** Enhanced sidebar with queue management section for supervisors
+- **History Display:** Added recording access directly from call history
+- **Role Detection:** Automatic role assignment based on extension number (configurable via localStorage)
+
+### Technical
+- All new modules follow consistent documentation standards
+- Error handling improved across all modules
+- API integration prepared for backend endpoints
+- Maintained backward compatibility with existing features
 
 ## [1.0.0] - 2026-02-11
 ### Added

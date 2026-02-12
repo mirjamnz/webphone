@@ -112,14 +112,29 @@
             <button class="digit-btn" data-digit="#">#</button>
         </div>
 
+        <!-- Queue Management (Supervisor/Agent) -->
+        <div id="queueSection" class="queue-section" data-role="supervisor" style="margin-bottom: 15px; display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding: 0 5px;">
+                <div style="font-size: 0.8rem; color: var(--text-muted);">
+                    <i class="fa-solid fa-list"></i> QUEUES
+                </div>
+                <button id="btnQueueConfig" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.8rem;" title="Manage Queues">
+                    <i class="fa-solid fa-pen-to-square"></i> Manage
+                </button>
+            </div>
+            <div id="queueList" class="queue-list">
+                <!-- Queue items will be dynamically added here -->
+            </div>
+        </div>
+
         <div class="action-grid">
             <button id="btnCall" class="btn btn-success" style="grid-column: span 2">
                 <i class="fa-solid fa-phone"></i> Call
             </button>
-            <button class="btn btn-warning" onclick="app.callSpecial('*45')"> 
+            <button class="btn btn-warning" onclick="app.callSpecial('*45')" data-role="agent"> 
                 <i class="fa-solid fa-right-to-bracket"></i> Q-In
             </button>
-            <button class="btn btn-danger" onclick="app.callSpecial('*46')"> 
+            <button class="btn btn-danger" onclick="app.callSpecial('*46')" data-role="agent"> 
                 <i class="fa-solid fa-right-from-bracket"></i> Q-Out
             </button>
         </div>
@@ -183,6 +198,19 @@
             </div>
             <button id="btnSaveBlf" class="btn btn-success" style="margin-top: 20px;">
                 <i class="fa-solid fa-check"></i> Save List
+            </button>
+        </div>
+
+        <div id="queueModal" class="modal-overlay hidden" style="justify-content: center;">
+            <div class="sidebar-header" style="border:none;">
+                <h3>Queue Management</h3>
+                <button class="config-btn" id="btnCloseQueue"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="queueConfigList" class="config-scroll-area">
+                <!-- Queue configuration items will be added here -->
+            </div>
+            <button id="btnSaveQueues" class="btn btn-success" style="margin-top: 20px;">
+                <i class="fa-solid fa-check"></i> Save Configuration
             </button>
         </div>
 

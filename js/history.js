@@ -61,7 +61,8 @@ export class HistoryManager {
                     number: isOutbound ? dst : src,
                     date: new Date(timeRaw),
                     duration: parseInt(record.duration || 0, 10),
-                    status: record.disposition || "UNKNOWN"
+                    status: record.disposition || "UNKNOWN",
+                    uniqueid: record.uniqueid || record.id || null
                 };
             });
 
@@ -140,14 +141,34 @@ export class HistoryManager {
                     <div class="hist-number">${call.number}</div>
                     <div class="hist-meta">${this.formatDate(call.date)} • ${this.formatDuration(call.duration)}</div>
                 </div>
-                <button class="btn-icon-only" title="Call ${call.number}">
-                    <i class="fa-solid fa-phone"></i>
-                </button>
+                <div class="hist-actions">
+                    <button class="btn-icon-only" title="Call ${call.number}">
+                        <i class="fa-solid fa-phone"></i>
+                    </button>
+                    ${call.uniqueid ? `<button class="btn-icon-only hist-recording" data-uniqueid="${call.uniqueid}" title="View Recording" style="display: none;">
+                        <i class="fa-solid fa-microphone"></i>
+                    </button>` : ''}
+                </div>
             `;
 
-            row.querySelector('button').onclick = () => {
+            row.querySelector('.btn-icon-only:not(.hist-recording)').onclick = () => {
                 this.callbacks.onRedial(call.number);
             };
+            
+            // Recording button (if available and user has permission)
+            const recordingBtn = row.querySelector('.hist-recording');
+            if (recordingBtn && window.app?.recordings) {
+                recordingBtn.style.display = '';
+                recordingBtn.onclick = async () => {
+                    const recordings = await window.app.recordings.getRecordingsForCall(call.uniqueid);
+                    if (recordings.length > 0) {
+                        // Show recordings modal or play first recording
+                        window.app.recordings.playRecording(recordings[0].id);
+                    } else {
+                        alert("No recording available for this call.");
+                    }
+                };
+            }
 
             container.appendChild(row);
         });

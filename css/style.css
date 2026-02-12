@@ -612,3 +612,204 @@ input:checked + .slider:before {
     max-height: 50vh; /* Prevent taking up full screen */
     padding-right: 5px;
 }
+
+/* --- Queue Management Styles --- */
+.queue-section {
+    background: rgba(0,0,0,0.2);
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+
+.queue-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.queue-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #334155;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+}
+
+.queue-item.logged-in {
+    background: rgba(16, 185, 129, 0.2);
+    border-color: var(--success);
+}
+
+.queue-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.queue-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-main);
+}
+
+.queue-status {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.queue-toggle {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.2s;
+}
+
+.queue-toggle:hover {
+    background: var(--border);
+    color: var(--text-main);
+}
+
+.queue-toggle.active {
+    background: var(--success);
+    border-color: var(--success);
+    color: white;
+}
+
+/* --- Enhanced Animations --- */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* --- Role Badge --- */
+.role-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    background: var(--primary);
+    color: white;
+    border-radius: 12px;
+    margin-left: 8px;
+    font-weight: 600;
+}
+
+/* --- History Actions --- */
+.hist-actions {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+.btn-icon-only {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.btn-icon-only:hover {
+    background: var(--border);
+    color: var(--primary);
+    border-color: var(--primary);
+}
+
+/* --- Recording Item Styles --- */
+.recording-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    background: #334155;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    margin-bottom: 8px;
+    transition: all 0.2s;
+}
+
+.recording-item:hover {
+    background: #475569;
+    border-color: var(--primary);
+}
+
+.recording-info {
+    flex: 1;
+}
+
+.recording-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-main);
+    margin-bottom: 4px;
+}
+
+.recording-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.recording-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* --- Responsive Design Improvements --- */
+@media (max-width: 768px) {
+    .app-container {
+        grid-template-columns: 1fr;
+        height: 100vh;
+        width: 100%;
+        gap: 10px;
+    }
+    
+    .panel {
+        border-radius: 0;
+        padding: 15px;
+    }
+    
+    .sidebar {
+        order: 2;
+    }
+    
+    .main-stage {
+        order: 1;
+        min-height: 40vh;
+    }
+}
+
+/* --- Professional Loading States --- */
+.loading-spinner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 20px;
+    color: var(--text-muted);
+}
+
+.loading-spinner i {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
