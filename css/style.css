@@ -271,8 +271,16 @@ input[type="text"], input[type="password"] {
     border: 1px solid rgba(255,255,255,0.1);
     transform: translateY(150px);
     transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    z-index: 100; /* Ensure controls are above everything */
+    pointer-events: auto; /* Ensure buttons are clickable */
 }
 .controls-bar.active { transform: translateY(0); }
+
+.controls-bar .ctrl-btn {
+    pointer-events: auto; /* Ensure buttons are clickable */
+    position: relative;
+    z-index: 101; /* Even higher z-index for buttons */
+}
 
 .ctrl-btn {
     width: 50px; height: 50px;

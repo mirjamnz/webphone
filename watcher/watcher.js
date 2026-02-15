@@ -248,6 +248,7 @@ function handleNewChannel(evt) {
         callerid: evt.calleridnum || evt.callerid,
         destination: evt.exten || evt.destination,
         context: evt.context,
+        tenant_id: '28b0d0e2-0a39-48c0-84f9-d340472273a9',
         state: evt.channelstate || 'Unknown',
         startTime: new Date().toISOString(),
         answered: false,

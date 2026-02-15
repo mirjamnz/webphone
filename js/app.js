@@ -81,12 +81,25 @@ const phoneCallbacks = {
             ui.statusDot.className = 'status-indicator connected';
             ui.btnLogin.innerHTML = '<i class="fa-solid fa-rotate"></i> Reconnect';
             
-            if (!blfManager) {
-                blfManager = new BlfManager(phone, settings);
-                blfManager.init();
+            // Initialize BLF Manager if not already initialized
+            if (!blfManager && phone.userAgent) {
+                try {
+                    blfManager = new BlfManager(phone, settings);
+                    blfManager.init();
+                    console.log("BLF Manager initialized");
+                } catch (e) {
+                    console.error("Error initializing BLF Manager:", e);
+                }
+            } else if (blfManager && !phone.userAgent) {
+                // Phone disconnected, reset BLF manager
+                blfManager = null;
             }
         } else {
             ui.statusDot.className = 'status-indicator';
+            // Reset BLF manager on disconnect
+            if (blfManager && state === 'Unregistered' || state === 'Disconnected') {
+                blfManager = null;
+            }
         }
     },
     onIncoming: (caller, acceptCb, rejectCb) => {
@@ -202,7 +215,10 @@ function updateLineUI(activeLine) {
 // --- INIT ---
 window.addEventListener('DOMContentLoaded', async () => {
     
-    // 1. Setup Audio & Defaults
+    // 1. Attach call control listeners first
+    attachCallControlListeners();
+    
+    // 2. Setup Audio & Defaults
     const devices = await audio.init();
     populateDeviceSelect(ui.inputs.mic, devices.inputs, settings.get('micId'));
     populateDeviceSelect(ui.inputs.speaker, devices.outputs, settings.get('speakerId'));
@@ -420,117 +436,227 @@ async function renderQueueList() {
 // Note: This runs after DOMContentLoaded, so we check after user initialization
 
 // --- STANDARD EVENTS ---
-ui.btnCall.addEventListener('click', () => {
-    const num = ui.dialString.value;
-    if (!num) return;
+// Attach event listeners after DOM is ready
+function attachCallControlListeners() {
+    console.log("Attaching call control event listeners...");
     
-    // Save to history
-    historyManager.saveLastDialed(num);
+    // Verify buttons exist
+    const btnHangup = document.getElementById('btnHangup');
+    const btnMute = document.getElementById('btnMute');
+    const btnConsult = document.getElementById('btnConsult');
+    const btnHold = document.getElementById('btnHold');
+    const btnTransfer = document.getElementById('btnTransfer');
+    
+    if (!btnHangup || !btnMute || !btnConsult || !btnHold || !btnTransfer) {
+        console.error("Call control buttons not found in DOM!", {
+            btnHangup: !!btnHangup,
+            btnMute: !!btnMute,
+            btnConsult: !!btnConsult,
+            btnHold: !!btnHold,
+            btnTransfer: !!btnTransfer
+        });
+        return;
+    }
+    
+    ui.btnCall.addEventListener('click', () => {
+        const num = ui.dialString.value;
+        if (!num) return;
+        
+        // Save to history
+        historyManager.saveLastDialed(num);
 
-    if (isConsulting) {
-        line2Num = num; 
-        phone.startConsultation(num).then(() => {
+        if (isConsulting) {
+            line2Num = num; 
+            phone.startConsultation(num).then(() => {
+                ui.consultControls.classList.remove('hidden');
+                updateLineUI(2);
+                isConsulting = false;
+                resetCallButton();
+                ui.dialString.value = ""; 
+            }).catch(err => alert("Consult failed: " + err));
+        } else {
+            line1Num = num; 
+            phone.call(num).catch(e => {
+                console.error("Call Failed:", e);
+                alert("Call Error: " + e.message);
+            });
+        }
+    });
+
+    document.querySelectorAll('.digit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const digit = btn.getAttribute('data-digit');
+            if (phone.isCallActive() && !isConsulting) {
+                phone.sendDTMF(digit);
+            } else {
+                ui.dialString.value += digit;
+            }
+        });
+    });
+
+    // Attach listeners directly (remove any existing first by cloning)
+    btnHangup.replaceWith(btnHangup.cloneNode(true));
+    const newBtnHangup = document.getElementById('btnHangup');
+    newBtnHangup.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log("Hangup button clicked");
+        try {
+            phone.hangup();
+        } catch (error) {
+            console.error("Hangup error:", error);
+            alert("Hangup failed: " + error.message);
+        }
+    });
+
+    btnMute.replaceWith(btnMute.cloneNode(true));
+    const newBtnMute = document.getElementById('btnMute');
+    newBtnMute.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log("Mute button clicked");
+        try {
+            const isMuted = phone.toggleMute();
+            console.log("Mute toggled, new state:", isMuted);
+            newBtnMute.classList.toggle('active', isMuted);
+            ui.btnMute = newBtnMute;
+        } catch (error) {
+            console.error("Mute error:", error);
+            alert("Mute failed: " + error.message);
+        }
+    });
+
+    btnHold.replaceWith(btnHold.cloneNode(true));
+    const newBtnHold = document.getElementById('btnHold');
+    newBtnHold.addEventListener('click', async () => {
+        if (isConsulting) {
+            isConsulting = false;
+            resetCallButton();
+        }
+        const isHeld = await phone.toggleHold();
+        newBtnHold.classList.toggle('active', isHeld);
+        ui.btnHold = newBtnHold;
+    });
+
+    btnTransfer.replaceWith(btnTransfer.cloneNode(true));
+    const newBtnTransfer = document.getElementById('btnTransfer');
+    newBtnTransfer.addEventListener('click', () => {
+        const num = prompt("Enter extension to transfer to:");
+        if (num) {
+            phone.blindTransfer(num).then(success => {
+                if(success) console.log("Transfer initiated...");
+            });
+        }
+    });
+
+    btnConsult.replaceWith(btnConsult.cloneNode(true));
+    const newBtnConsult = document.getElementById('btnConsult');
+    newBtnConsult.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log("Consult button clicked");
+        
+        if (!phone.isCallActive()) {
+            alert("No active call to consult");
+            return;
+        }
+        
+        try {
+            const num = prompt("Enter extension to consult with:");
+            if (!num || num.trim() === '') {
+                return; // User cancelled
+            }
+            
+            console.log("Starting consultation with:", num);
+            line2Num = num.trim();
+            
+            // Hold the current call if not already held
+            const currentBtnHold = document.getElementById('btnHold');
+            if (!currentBtnHold.classList.contains('active')) {
+                const isHeld = await phone.toggleHold();
+                currentBtnHold.classList.toggle('active', isHeld);
+            }
+            
+            // Start the consultation call
+            await phone.startConsultation(num.trim());
+            
+            // Show consult controls
             ui.consultControls.classList.remove('hidden');
             updateLineUI(2);
             isConsulting = false;
             resetCallButton();
-            ui.dialString.value = ""; 
-        }).catch(err => alert("Consult failed: " + err));
-    } else {
-        line1Num = num; 
-        phone.call(num).catch(e => {
-            console.error("Call Failed:", e);
-            alert("Call Error: " + e.message);
-        });
-    }
-});
-
-document.querySelectorAll('.digit-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const digit = btn.getAttribute('data-digit');
-        if (phone.isCallActive() && !isConsulting) {
-            phone.sendDTMF(digit);
-        } else {
-            ui.dialString.value += digit;
+            
+            // Hide transfer and consult buttons
+            const currentBtnTransfer = document.getElementById('btnTransfer');
+            const currentBtnConsult = document.getElementById('btnConsult');
+            currentBtnTransfer.classList.add('hidden');
+            currentBtnConsult.classList.add('hidden');
+        } catch (error) {
+            console.error("Consult error:", error);
+            alert("Consult failed: " + (error.message || error));
         }
     });
-});
 
-document.getElementById('btnHangup').addEventListener('click', () => {
-    phone.hangup();
-});
+    ui.btnLine1.addEventListener('click', () => {
+        phone.swapToLine(1).then(() => updateLineUI(1));
+    });
 
-document.getElementById('btnMute').addEventListener('click', () => {
-    const isMuted = phone.toggleMute();
-    ui.btnMute.classList.toggle('active', isMuted);
-});
+    ui.btnLine2.addEventListener('click', () => {
+        phone.swapToLine(2).then(() => updateLineUI(2));
+    });
 
-document.getElementById('btnHold').addEventListener('click', async () => {
-    if (isConsulting) {
-        isConsulting = false;
-        resetCallButton();
-    }
-    const isHeld = await phone.toggleHold();
-    ui.btnHold.classList.toggle('active', isHeld);
-});
-
-document.getElementById('btnTransfer').addEventListener('click', () => {
-    const num = prompt("Enter extension to transfer to:");
-    if (num) {
-        phone.blindTransfer(num).then(success => {
-            if(success) console.log("Transfer initiated...");
+    const btnMerge = document.getElementById('btnMerge');
+    if (btnMerge) {
+        btnMerge.addEventListener('click', () => {
+            phone.mergeCalls().then(success => {
+                if (success) {
+                    ui.btnLine1.classList.add('active-line');
+                    ui.btnLine1.classList.remove('held-line');
+                    ui.btnLine1.innerHTML = `<i class="fa-solid fa-user"></i> <span>${line1Num} (Conf)</span>`;
+                    ui.btnLine2.classList.add('active-line');
+                    ui.btnLine2.classList.remove('held-line');
+                    ui.btnLine2.innerHTML = `<i class="fa-solid fa-user-doctor"></i> <span>${line2Num} (Conf)</span>`;
+                }
+            });
         });
     }
-});
 
-document.getElementById('btnConsult').addEventListener('click', async () => {
-    isConsulting = true;
-    setCallButtonToConsultMode();
-    if (!ui.btnHold.classList.contains('active')) {
-        const isHeld = await phone.toggleHold();
-        ui.btnHold.classList.toggle('active', isHeld);
+    const btnCompleteTransfer = document.getElementById('btnCompleteTransfer');
+    if (btnCompleteTransfer) {
+        btnCompleteTransfer.addEventListener('click', () => {
+            phone.completeConsultation().then(success => {
+                if (success) {
+                    ui.consultControls.classList.add('hidden');
+                }
+            });
+        });
     }
-    document.getElementById('btnTransfer').classList.add('hidden');
-    document.getElementById('btnConsult').classList.add('hidden');
-});
 
-ui.btnLine1.addEventListener('click', () => {
-    phone.swapToLine(1).then(() => updateLineUI(1));
-});
-
-ui.btnLine2.addEventListener('click', () => {
-    phone.swapToLine(2).then(() => updateLineUI(2));
-});
-
-document.getElementById('btnMerge').addEventListener('click', () => {
-    phone.mergeCalls().then(success => {
-        if (success) {
-            ui.btnLine1.classList.add('active-line');
-            ui.btnLine1.classList.remove('held-line');
-            ui.btnLine1.innerHTML = `<i class="fa-solid fa-user"></i> <span>${line1Num} (Conf)</span>`;
-            ui.btnLine2.classList.add('active-line');
-            ui.btnLine2.classList.remove('held-line');
-            ui.btnLine2.innerHTML = `<i class="fa-solid fa-user-doctor"></i> <span>${line2Num} (Conf)</span>`;
-        }
-    });
-});
-
-document.getElementById('btnCompleteTransfer').addEventListener('click', () => {
-    phone.completeConsultation().then(success => {
-        if (success) {
+    const btnCancelConsult = document.getElementById('btnCancelConsult');
+    if (btnCancelConsult) {
+        btnCancelConsult.addEventListener('click', () => {
+            phone.cancelConsultation(); 
+            phone.toggleHold(); 
+            const currentBtnHold = document.getElementById('btnHold');
+            if (currentBtnHold) currentBtnHold.classList.remove('active'); 
             ui.consultControls.classList.add('hidden');
-        }
-    });
-});
+            const currentBtnTransfer = document.getElementById('btnTransfer');
+            const currentBtnConsult = document.getElementById('btnConsult');
+            if (currentBtnTransfer) currentBtnTransfer.classList.remove('hidden');
+            if (currentBtnConsult) currentBtnConsult.classList.remove('hidden');
+        });
+    }
+    
+    console.log("Call control event listeners attached successfully");
+}
 
-document.getElementById('btnCancelConsult').addEventListener('click', () => {
-    phone.cancelConsultation(); 
-    phone.toggleHold(); 
-    ui.btnHold.classList.remove('active'); 
-    ui.consultControls.classList.add('hidden');
-    document.getElementById('btnTransfer').classList.remove('hidden');
-    document.getElementById('btnConsult').classList.remove('hidden');
-});
+// Attach listeners when DOM is ready
+if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', attachCallControlListeners);
+} else {
+    // DOM already loaded
+    attachCallControlListeners();
+}
 
 function populateDeviceSelect(selectEl, devices, selectedId) {
     selectEl.innerHTML = ''; 

@@ -227,24 +227,135 @@ export class PhoneEngine {
     }
 
     cleanupCall() {
-        this.audio.stopRinging();
-        if (this.confCtx) { this.confCtx.close(); this.confCtx = null; }
+        console.log("cleanupCall() called. Session:", this.session?.state, "Consult:", this.consultSession?.state);
         
-        // If Line 1 dies but Line 2 exists, prompt user to switch?
-        // For simplicity, we just clear the specific slot.
-        if (this.session && this.session.state === SIP.SessionState.Terminated) {
+        this.audio.stopRinging();
+        
+        // Clean up conference context
+        if (this.confCtx) {
+            try {
+                this.confCtx.close();
+            } catch (e) {
+                console.error("Error closing conference context:", e);
+            }
+            this.confCtx = null;
+        }
+        
+        // Check main session (Line 1)
+        if (this.session) {
+            const sessionState = this.session.state;
+            if (sessionState === SIP.SessionState.Terminated) {
+                this.session = null;
+                this.isHeld = false;
+            }
+        }
+        
+        // Check consultation session (Line 2)
+        if (this.consultSession) {
+            const consultState = this.consultSession.state;
+            if (consultState === SIP.SessionState.Terminated) {
+                this.consultSession = null;
+            }
+        }
+        
+        // If NO active sessions exist, trigger call end
+        const hasActiveSession = this.session && 
+            (this.session.state === SIP.SessionState.Established || 
+             this.session.state === SIP.SessionState.Establishing ||
+             this.session.state === SIP.SessionState.Ringing);
+        
+        const hasActiveConsult = this.consultSession && 
+            (this.consultSession.state === SIP.SessionState.Established || 
+             this.consultSession.state === SIP.SessionState.Establishing ||
+             this.consultSession.state === SIP.SessionState.Ringing);
+        
+        if (!hasActiveSession && !hasActiveConsult) {
+            // Both sessions ended or don't exist
             this.session = null;
+            this.consultSession = null;
             this.isHeld = false;
-            
-            // If we have a consult session, maybe promote it? 
-            // For now, let's just trigger End if NO sessions exist.
-            if (!this.consultSession) this.callbacks.onCallEnd();
+            this.isConference = false;
+            this.callbacks.onCallEnd();
+        } else if (!hasActiveSession && hasActiveConsult) {
+            // Main session ended but consult session still active - return to consult
+            this.session = null;
+            this.setupRemoteMedia(this.consultSession);
         }
     }
 
     hangup() {
-        if (!this.session) return;
-        this.session.state === SIP.SessionState.Established ? this.session.bye() : this.session.cancel();
+        console.log("Hangup called. Session state:", this.session?.state);
+        
+        // Hang up main session (Line 1)
+        if (this.session) {
+            try {
+                // Check if session is in a state that can be hung up
+                const state = this.session.state;
+                if (state === SIP.SessionState.Established || 
+                    state === SIP.SessionState.Establishing ||
+                    state === SIP.SessionState.Initial ||
+                    state === SIP.SessionState.Ringing) {
+                    this.session.bye();
+                } else if (state === SIP.SessionState.InviteSent) {
+                    this.session.cancel();
+                } else {
+                    // Force cleanup if session exists but in unexpected state
+                    console.warn("Session in unexpected state, forcing cleanup:", state);
+                    this.session = null;
+                    this.cleanupCall();
+                }
+            } catch (e) {
+                console.error("Error hanging up main session:", e);
+                // Force cleanup on error
+                this.session = null;
+                this.cleanupCall();
+            }
+        } else {
+            // No session, but might have consult session
+            if (this.consultSession) {
+                console.log("No main session, but consult session exists");
+            } else {
+                console.log("No active sessions to hang up");
+            }
+        }
+        
+        // Hang up consultation session (Line 2) if exists
+        if (this.consultSession) {
+            try {
+                const state = this.consultSession.state;
+                if (state === SIP.SessionState.Established || 
+                    state === SIP.SessionState.Establishing ||
+                    state === SIP.SessionState.Initial ||
+                    state === SIP.SessionState.Ringing) {
+                    this.consultSession.bye();
+                } else if (state === SIP.SessionState.InviteSent) {
+                    this.consultSession.cancel();
+                }
+                this.consultSession = null;
+            } catch (e) {
+                console.error("Error hanging up consultation session:", e);
+                this.consultSession = null;
+            }
+        }
+        
+        // Clean up conference context if exists
+        if (this.confCtx) {
+            try {
+                this.confCtx.close();
+                this.confCtx = null;
+            } catch (e) {
+                console.error("Error closing conference context:", e);
+            }
+        }
+        
+        // Reset state
+        this.isHeld = false;
+        this.isConference = false;
+        
+        // If no sessions exist, trigger cleanup immediately
+        if (!this.session && !this.consultSession) {
+            this.cleanupCall();
+        }
     }
 
     isCallActive() {
@@ -260,11 +371,40 @@ export class PhoneEngine {
     }
 
     toggleMute() {
-        if (!this.session) return false;
-        const pc = this.session.sessionDescriptionHandler.peerConnection;
-        let isMuted = false;
-        pc.getSenders().forEach(s => { if(s.track) { s.track.enabled = !s.track.enabled; isMuted = !s.track.enabled; }});
-        return isMuted;
+        console.log("toggleMute() called. Session:", this.session?.state);
+        if (!this.session) {
+            console.warn("No session for mute");
+            return false;
+        }
+        
+        try {
+            const pc = this.session.sessionDescriptionHandler?.peerConnection;
+            if (!pc) {
+                console.error("No peer connection for mute");
+                return false;
+            }
+            
+            let isMuted = false;
+            let hasTrack = false;
+            pc.getSenders().forEach(s => { 
+                if(s.track) { 
+                    hasTrack = true;
+                    s.track.enabled = !s.track.enabled; 
+                    isMuted = !s.track.enabled; 
+                }
+            });
+            
+            if (!hasTrack) {
+                console.warn("No audio track found for mute");
+                return false;
+            }
+            
+            console.log("Mute toggled, new state:", isMuted);
+            return isMuted;
+        } catch (error) {
+            console.error("Error in toggleMute:", error);
+            return false;
+        }
     }
     
     async toggleHold() {
@@ -291,7 +431,16 @@ export class PhoneEngine {
         this.consultSession = inviter; 
         this.consultSession.stateChange.addListener((state) => {
             if (state === SIP.SessionState.Established) this.setupRemoteMedia(this.consultSession);
-            if (state === SIP.SessionState.Terminated) this.consultSession = null;
+            if (state === SIP.SessionState.Terminated) {
+                this.consultSession = null;
+                // If main session still exists, return to it
+                if (this.session && this.session.state === SIP.SessionState.Established) {
+                    this.setupRemoteMedia(this.session);
+                } else {
+                    // Both sessions ended
+                    this.cleanupCall();
+                }
+            }
         });
         return inviter.invite();
     }
