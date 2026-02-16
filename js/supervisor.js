@@ -200,9 +200,15 @@ export class SupervisorManager {
             this.socket.once('supervisor:error', errorHandler);
 
             try {
+                // Get supervisor extension from user manager
+                const supervisorExtension = this.user.profile?.extension || this.user.currentUser || this.user.settings?.get('username');
+                if (!supervisorExtension) {
+                    throw new Error("Supervisor extension not found");
+                }
                 this.socket.emit('supervisor:monitor', {
                     agentExtension,
-                    callUniqueId
+                    callUniqueId,
+                    supervisorExtension
                 });
             } catch (error) {
                 clearTimeout(timeout);
@@ -255,8 +261,14 @@ export class SupervisorManager {
             this.socket.once('supervisor:error', errorHandler);
 
             try {
+                // Get supervisor extension from user manager
+                const supervisorExtension = this.user.profile?.extension || this.user.currentUser || this.user.settings?.get('username');
+                if (!supervisorExtension) {
+                    throw new Error("Supervisor extension not found");
+                }
                 this.socket.emit('supervisor:whisper', {
-                    agentExtension
+                    agentExtension,
+                    supervisorExtension
                 });
             } catch (error) {
                 clearTimeout(timeout);
@@ -309,8 +321,14 @@ export class SupervisorManager {
             this.socket.once('supervisor:error', errorHandler);
 
             try {
+                // Get supervisor extension from user manager
+                const supervisorExtension = this.user.profile?.extension || this.user.currentUser || this.user.settings?.get('username');
+                if (!supervisorExtension) {
+                    throw new Error("Supervisor extension not found");
+                }
                 this.socket.emit('supervisor:barge', {
-                    agentExtension
+                    agentExtension,
+                    supervisorExtension
                 });
             } catch (error) {
                 clearTimeout(timeout);

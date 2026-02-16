@@ -1,13 +1,11 @@
 /**
  * Asterisk Manager Interface (AMI) Watcher Service
- * Purpose: Monitor call center activity and broadcast to dashboard.
  */
 
 import { Server } from 'socket.io';
 import AsteriskManager from 'asterisk-manager';
 import dotenv from 'dotenv';
 import http from 'http';
-import cors from 'cors';
 
 dotenv.config();
 
@@ -27,15 +25,11 @@ const config = {
             methods: ['GET', 'POST'],
             credentials: true
         }
-    },
-    logLevel: process.env.LOG_LEVEL || 'info',
-    debug: process.env.DEBUG === 'true'
+    }
 };
 
 const state = {
     activeCalls: new Map(),
-    agents: new Map(),
-    queues: new Map(),
     connected: false
 };
 
@@ -56,33 +50,19 @@ function connectAMI() {
         ami.on('connect', () => {
             state.connected = true;
             log('info', '✅ Connected to Asterisk AMI');
-            io.emit('ami:connected', { timestamp: new Date().toISOString() });
             requestInitialState();
         });
 
         ami.on('error', (err) => log('error', `❌ AMI Error: ${err.message}`));
-        ami.on('disconnect', () => log('warn', '⚠️  Disconnected from AMI'));
-
-        // Bind Events
-        ami.on('newchannel', (evt) => handleNewChannel(evt));
-        ami.on('newstate', (evt) => handleChannelState(evt));
-        ami.on('answer', (evt) => handleCallAnswered(evt));
-        ami.on('hangup', (evt) => handleCallHangup(evt));
-        ami.on('bridge', (evt) => handleCallBridge(evt));
         
-        // Agent/Queue/System Events
-        ami.on('agentlogin', (evt) => handleAgentLogin(evt));
-        ami.on('agentlogout', (evt) => handleAgentLogout(evt));
-        ami.on('agentcalled', (evt) => handleAgentCalled(evt));
-        ami.on('queue member added', (evt) => handleQueueMemberAdded(evt));
-        ami.on('queue member removed', (evt) => handleQueueMemberRemoved(evt));
-        ami.on('peerstatus', (evt) => handlePeerStatus(evt));
-        ami.on('extensionstatus', (evt) => handleExtensionStatus(evt));
+        // Bind Event Handlers
+        ami.on('newchannel', handleNewChannel);
+        ami.on('newstate', handleChannelState);
+        ami.on('hangup', handleCallHangup);
 
-        // Ping to keep connection alive
-        setInterval(() => {
-            if (state.connected) ami.action({ action: 'Ping' }, () => {});
-        }, 30000);
+        // Listen for both case variations to be safe
+        ami.on('DialBegin', handleDialBegin); 
+        ami.on('dialbegin', handleDialBegin);
 
     } catch (error) {
         log('error', `Failed to initialize AMI: ${error.message}`);
@@ -90,167 +70,94 @@ function connectAMI() {
     }
 }
 
-function requestInitialState() {
-    ami.action({ action: 'CoreShowChannels' }, (err, res) => {
-        if (!err && res.events) res.events.forEach(evt => {
-            if (evt.event === 'CoreShowChannel') handleNewChannel(evt);
-        });
-    });
-    ami.action({ action: 'QueueStatus' }, (err, res) => {
-        if (!err && res.events) res.events.forEach(evt => {
-            if (evt.event === 'QueueParams') updateQueueStats(evt);
-        });
-    });
-}
-
-// ========== EVENT HANDLERS ==========
-
 function handleNewChannel(evt) {
-    const uniqueid = evt.uniqueid || evt.uniqueid1;
-    if (!uniqueid) return;
+    const uid = evt.uniqueid || evt.uniqueid1;
+    if (!uid || state.activeCalls.has(uid)) return;
 
-    if (evt.exten === 's' || evt.destination === 's') return;
-    
-    if (evt.channel.toLowerCase().includes('herotrunk')) {
-        const isInternalRegex = /^(3|4)\d{3}$/;
-        const callerID = evt.calleridnum || "";
-        if (isInternalRegex.test(callerID)) return;
-    }
+    if (evt.exten === 's' || evt.channel.startsWith('Local/')) return;
 
-    if (evt.channel.startsWith('Local/')) return;
-    if (state.activeCalls.has(uniqueid)) return;
-    if ((!evt.calleridnum || evt.calleridnum === '<unknown>') && (!evt.exten)) return;
-
-    const agentId = extractExtension(evt.channel);
-    const dest = evt.exten || evt.destination;
-    
-    if (agentId) {
-        for (const [existingId, existingCall] of state.activeCalls.entries()) {
-            if (existingCall.agent === agentId && existingCall.destination === dest) {
-                 state.activeCalls.delete(existingId);
-                 broadcastActiveCalls(); 
-            }
-        }
-    }
-
-    const call = {
-        uniqueid: uniqueid,
+    const newCall = {
+        uniqueid: uid,
         channel: evt.channel,
-        callerid: evt.calleridnum || evt.callerid || 'Unknown',
-        destination: dest || 'Unknown',
-        context: evt.context,
-        tenant_id: '28b0d0e2-0a39-48c0-84f9-d340472273a9',        
-        state: evt.channelstate || 'Ringing',
+        callerid: evt.calleridnum || 'Unknown',
+        destination: evt.exten || 'Unknown',
+        state: evt.channelstatedesc || 'Ringing',
         startTime: new Date().toISOString(),
         answered: false,
-        duration: 0,
-        agent: agentId
+        agent: extractExtension(evt.channel)
     };
 
-    state.activeCalls.set(uniqueid, call);
-    log('info', `New Call: ${call.callerid} -> ${call.destination}`);
-    
-    io.emit('call:new', call);
+    state.activeCalls.set(uid, newCall);
+    log('info', `New Call: ${newCall.callerid} -> ${newCall.destination}`);
     broadcastActiveCalls();
 }
 
 function handleChannelState(evt) {
-    const call = state.activeCalls.get(evt.uniqueid);
-    if (!call) return;
+    const activeCall = state.activeCalls.get(evt.uniqueid);
+    if (!activeCall) return;
 
-    // Log the debug state for analysis
-    console.log(`[DEBUG STATE] Channel: ${evt.channel} | State: ${evt.channelstate} (${evt.channelstatedesc})`);
+    const desc = evt.channelstatedesc;
 
-    const rawState = evt.channelstate;
-    const rawDesc = evt.channelstatedesc;
-
-    if (rawState === '6' || rawState === 'Up' || rawDesc === 'Up') {
-        if (!call.answered) {
-            log('info', `Call Connected: ${call.callerid}`);
-            call.answered = true;
-            call.state = 'Answered';
-            io.emit('call:answered', call); 
-        }
+    if (desc === 'Up' && !activeCall.answered) {
+        activeCall.answered = true;
+        activeCall.state = 'Answered';
+        log('info', `Call Answered: ${activeCall.callerid}`);
     } else {
-        call.state = rawDesc || rawState;
+        activeCall.state = desc;
     }
 
-    const extension = extractExtension(evt.channel);
-    if (extension) updateAgentStatus(extension, call.answered ? 'talking' : 'ringing');
-
-    io.emit('call:state', { uniqueid: evt.uniqueid, state: call.state });
     broadcastActiveCalls();
 }
 
-function handleCallAnswered(evt) {
-    const call = state.activeCalls.get(evt.uniqueid);
-    if (!call) return;
+// Catches when the system starts dialing an agent (e.g. Trunk -> 3001)
+function handleDialBegin(evt) {
+    // DEBUG: Let's see exactly what Asterisk is sending us
+    console.log('DEBUG: DialBegin Event:', JSON.stringify(evt));
 
-    call.answered = true;
-    call.state = 'Answered'; 
-    call.agent = extractExtension(evt.channel) || call.agent;
+    // CHECK BOTH CASES: The library might send lowercase or capitalized keys
+    const uid = evt.uniqueid || evt.Uniqueid;
+    const destChannel = evt.destchannel || evt.DestChannel;
+
+    if (!uid || !state.activeCalls.has(uid)) {
+        // If we can't find the call, we can't link it
+        return;
+    }
+
+    const destExt = extractExtension(destChannel);
     
-    if (call.agent) updateAgentStatus(call.agent, 'talking');
-
-    io.emit('call:answered', call);
-    broadcastActiveCalls();
+    if (destExt) {
+        const call = state.activeCalls.get(uid);
+        call.agent = destExt; // Updates the call with the correct agent extension
+        log('info', `Linked Agent ${destExt} to Call ${uid}`);
+        broadcastActiveCalls();
+    }
 }
 
 function handleCallHangup(evt) {
-    const call = state.activeCalls.get(evt.uniqueid);
-    if (!call) return;
-
-    const duration = Math.floor((new Date() - new Date(call.startTime)) / 1000);
-    call.duration = duration;
-    
-    if (call.agent) updateAgentStatus(call.agent, 'available');
-
-    state.activeCalls.delete(evt.uniqueid);
-    io.emit('call:ended', call);
-    broadcastActiveCalls();
+    if (state.activeCalls.has(evt.uniqueid)) {
+        state.activeCalls.delete(evt.uniqueid);
+        log('info', `Call Ended: ${evt.uniqueid}`);
+        broadcastActiveCalls();
+    }
 }
 
-function handleCallBridge(evt) {
-    io.emit('call:bridged', evt);
-    broadcastActiveCalls();
+function requestInitialState() {
+    ami.action({ action: 'CoreShowChannels' }, (err, res) => {
+        if (!err && res.events) {
+            res.events.forEach(e => {
+                if (e.event === 'CoreShowChannel') handleNewChannel(e);
+            });
+        }
+    });
 }
-
-function handleAgentLogin(evt) { updateAgentStatus(evt.agent || evt.extension, 'available'); }
-function handleAgentLogout(evt) { updateAgentStatus(evt.agent || evt.extension, 'offline'); }
-function handleAgentCalled(evt) { updateAgentStatus(evt.agent || evt.extension, 'ringing'); }
-function handlePeerStatus(evt) { 
-    const ext = extractExtension(evt.peer);
-    if(ext) updateAgentStatus(ext, evt.peerstatus === 'Reachable' ? 'available' : 'offline');
-}
-function handleExtensionStatus(evt) {
-    if(evt.exten) updateAgentStatus(evt.exten, evt.status === '1' ? 'available' : 'offline');
-}
-
-function handleQueueMemberAdded(evt) { broadcastQueueStats(); }
-function handleQueueMemberRemoved(evt) { broadcastQueueStats(); }
-function handleQueueCallerJoined(evt) { broadcastQueueStats(); }
-function handleQueueCallerAbandoned(evt) { broadcastQueueStats(); }
-
-function updateAgentStatus(extension, status) {
-    if (!extension) return;
-    const agent = state.agents.get(extension) || { extension, callsToday: 0 };
-    agent.status = status;
-    state.agents.set(extension, agent);
-    io.emit('agents:status', Array.from(state.agents.values()));
-}
-
-function updateQueueStats(evt) {}
 
 function broadcastActiveCalls() {
     io.emit('calls:active', Array.from(state.activeCalls.values()));
 }
-function broadcastQueueStats() {
-    io.emit('queues:stats', Array.from(state.queues.values()));
-}
 
 function extractExtension(channel) {
     if (!channel) return null;
-    const match = channel.match(/PJSIP\/(\d+)/) || channel.match(/(\d{4,})/);
+    const match = channel.match(/PJSIP\/(\d+)/);
     return match ? match[1] : null;
 }
 
@@ -258,8 +165,7 @@ function log(level, message) {
     console.log(`[${level.toUpperCase()}] ${message}`);
 }
 
-// ========== SOCKET.IO SUPERVISOR ACTIONS ==========
-
+// Socket IO Supervisor Actions
 io.on('connection', (socket) => {
     log('info', `Dashboard connected: ${socket.id}`);
 
@@ -270,18 +176,27 @@ io.on('connection', (socket) => {
 
 function handleSpyAction(action, data, socket) {
     const { agentExtension } = data;
-    let options = 'q'; 
-    if (action === 'whisper') options = 'qw';
-    if (action === 'barge') options = 'qB';
+
+    // Guard against undefined extension
+    if (!agentExtension || agentExtension === 'undefined') {
+        log('error', `Supervisor action aborted: No agent extension provided.`);
+        socket.emit('supervisor:error', { action, error: 'No agent identified for this call.' });
+        return;
+    }
+
+    const prefixMap = { 'monitor': '*1', 'whisper': '*2', 'barge': '*3' };
+    const dialStr = `${prefixMap[action] || '*1'}${agentExtension}`;
+
+    log('info', `Supervisor triggering ${action} on ${agentExtension} via ${dialStr}`);
 
     ami.action({
         action: 'Originate',
-        channel: `PJSIP/4001`, // Supervisor handset
+        channel: `Local/4001@tenant_28b0d0e2_context`, 
         context: 'tenant_28b0d0e2_context',
-        exten: `*55${agentExtension}`, // Assuming *55 ChanSpy prefix
+        exten: dialStr,
         priority: 1,
-        variable: `SPY_OPTIONS=${options}`
-    }, (err, res) => {
+        async: true
+    }, (err) => {
         if (err) socket.emit('supervisor:error', { action, error: err.message });
         else socket.emit('supervisor:success', { action, agentExtension });
     });
