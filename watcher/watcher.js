@@ -109,63 +109,46 @@ function handleNewChannel(evt) {
     const uniqueid = evt.uniqueid || evt.uniqueid1;
     if (!uniqueid) return;
 
-    // LOGGING TO DEBUG
-    const debugMsg = `Incoming Channel: ${evt.channel} | Ext: ${evt.exten} | CallerID: ${evt.calleridnum}`;
-    console.log(debugMsg); 
-
-    // --- SMART FILTER START ---
-
-    // 1. Ignore internal dialplan execution (extension 's')
     if (evt.exten === 's' || evt.destination === 's') return;
     
-    // 2. SMART TRUNK FILTER
     if (evt.channel.toLowerCase().includes('herotrunk')) {
-        const callerID = evt.calleridnum || "";
-        
-        // Regex: Matches any 4-digit number starting with 3 or 4 (e.g. 3001, 4001)
         const isInternalRegex = /^(3|4)\d{3}$/;
-        
-        console.log(`[TRUNK CHECK] Channel: ${evt.channel} | CallerID: '${callerID}' | Match: ${isInternalRegex.test(callerID)}`);
-
-        if (isInternalRegex.test(callerID)) {
-            console.log(`-> Filtered (Trunk Outgoing Leg): ${evt.channel}`);
-            return;
-        }
+        const callerID = evt.calleridnum || "";
+        if (isInternalRegex.test(callerID)) return;
     }
 
-    // 3. Ignore "Annoyance" Channels
-    if (evt.channel.startsWith('Local/')) {
-        console.log(`-> Filtered (Local Channel): ${evt.channel}`);
-        return;
-    }
-
-    // 4. DUPLICATE CHECK
-    if (state.activeCalls.has(uniqueid)) {
-        console.log(`-> Filtered (Duplicate UniqueID): ${uniqueid}`);
-        return;
-    }
-
-    // 5. Ignore calls with no ID
+    if (evt.channel.startsWith('Local/')) return;
+    if (state.activeCalls.has(uniqueid)) return;
     if ((!evt.calleridnum || evt.calleridnum === '<unknown>') && (!evt.exten)) return;
 
-    // --- FILTER END ---
+    const agentId = extractExtension(evt.channel);
+    const dest = evt.exten || evt.destination;
+    
+    if (agentId) {
+        for (const [existingId, existingCall] of state.activeCalls.entries()) {
+            if (existingCall.agent === agentId && existingCall.destination === dest) {
+                 state.activeCalls.delete(existingId);
+                 broadcastActiveCalls(); 
+            }
+        }
+    }
 
     const call = {
         uniqueid: uniqueid,
         channel: evt.channel,
         callerid: evt.calleridnum || evt.callerid || 'Unknown',
-        destination: evt.exten || evt.destination || 'Unknown',
+        destination: dest || 'Unknown',
         context: evt.context,
         tenant_id: '28b0d0e2-0a39-48c0-84f9-d340472273a9',        
-        state: evt.channelstate || 'Unknown',
+        state: evt.channelstate || 'Ringing',
         startTime: new Date().toISOString(),
         answered: false,
         duration: 0,
-        agent: extractExtension(evt.channel)
+        agent: agentId
     };
 
     state.activeCalls.set(uniqueid, call);
-    log('info', `New Call Tracked: ${call.callerid} -> ${call.destination}`);
+    log('info', `New Call: ${call.callerid} -> ${call.destination}`);
     
     io.emit('call:new', call);
     broadcastActiveCalls();
@@ -175,11 +158,28 @@ function handleChannelState(evt) {
     const call = state.activeCalls.get(evt.uniqueid);
     if (!call) return;
 
-    call.state = evt.channelstate || call.state;
+    // Log the debug state for analysis
+    console.log(`[DEBUG STATE] Channel: ${evt.channel} | State: ${evt.channelstate} (${evt.channelstatedesc})`);
+
+    const rawState = evt.channelstate;
+    const rawDesc = evt.channelstatedesc;
+
+    if (rawState === '6' || rawState === 'Up' || rawDesc === 'Up') {
+        if (!call.answered) {
+            log('info', `Call Connected: ${call.callerid}`);
+            call.answered = true;
+            call.state = 'Answered';
+            io.emit('call:answered', call); 
+        }
+    } else {
+        call.state = rawDesc || rawState;
+    }
+
     const extension = extractExtension(evt.channel);
-    if (extension) updateAgentStatus(extension, 'talking');
+    if (extension) updateAgentStatus(extension, call.answered ? 'talking' : 'ringing');
 
     io.emit('call:state', { uniqueid: evt.uniqueid, state: call.state });
+    broadcastActiveCalls();
 }
 
 function handleCallAnswered(evt) {
@@ -187,8 +187,9 @@ function handleCallAnswered(evt) {
     if (!call) return;
 
     call.answered = true;
+    call.state = 'Answered'; 
     call.agent = extractExtension(evt.channel) || call.agent;
-    log('info', `Call Answered: ${call.callerid} by ${call.agent}`);
+    
     if (call.agent) updateAgentStatus(call.agent, 'talking');
 
     io.emit('call:answered', call);
@@ -202,7 +203,6 @@ function handleCallHangup(evt) {
     const duration = Math.floor((new Date() - new Date(call.startTime)) / 1000);
     call.duration = duration;
     
-    log('info', `Call Ended: ${call.callerid} (${duration}s)`);
     if (call.agent) updateAgentStatus(call.agent, 'available');
 
     state.activeCalls.delete(evt.uniqueid);
@@ -215,7 +215,6 @@ function handleCallBridge(evt) {
     broadcastActiveCalls();
 }
 
-// ... (Agent and Queue handlers) ...
 function handleAgentLogin(evt) { updateAgentStatus(evt.agent || evt.extension, 'available'); }
 function handleAgentLogout(evt) { updateAgentStatus(evt.agent || evt.extension, 'offline'); }
 function handleAgentCalled(evt) { updateAgentStatus(evt.agent || evt.extension, 'ringing'); }
@@ -227,13 +226,11 @@ function handleExtensionStatus(evt) {
     if(evt.exten) updateAgentStatus(evt.exten, evt.status === '1' ? 'available' : 'offline');
 }
 
-// Queue Events
 function handleQueueMemberAdded(evt) { broadcastQueueStats(); }
 function handleQueueMemberRemoved(evt) { broadcastQueueStats(); }
 function handleQueueCallerJoined(evt) { broadcastQueueStats(); }
 function handleQueueCallerAbandoned(evt) { broadcastQueueStats(); }
 
-// State Helpers
 function updateAgentStatus(extension, status) {
     if (!extension) return;
     const agent = state.agents.get(extension) || { extension, callsToday: 0 };
@@ -242,9 +239,7 @@ function updateAgentStatus(extension, status) {
     io.emit('agents:status', Array.from(state.agents.values()));
 }
 
-function updateQueueStats(evt) { 
-    // Simplified queue stat update for brevity/robustness
-}
+function updateQueueStats(evt) {}
 
 function broadcastActiveCalls() {
     io.emit('calls:active', Array.from(state.activeCalls.values()));
@@ -263,7 +258,35 @@ function log(level, message) {
     console.log(`[${level.toUpperCase()}] ${message}`);
 }
 
-// Startup
+// ========== SOCKET.IO SUPERVISOR ACTIONS ==========
+
+io.on('connection', (socket) => {
+    log('info', `Dashboard connected: ${socket.id}`);
+
+    socket.on('supervisor:monitor', (data) => handleSpyAction('monitor', data, socket));
+    socket.on('supervisor:whisper', (data) => handleSpyAction('whisper', data, socket));
+    socket.on('supervisor:barge', (data) => handleSpyAction('barge', data, socket));
+});
+
+function handleSpyAction(action, data, socket) {
+    const { agentExtension } = data;
+    let options = 'q'; 
+    if (action === 'whisper') options = 'qw';
+    if (action === 'barge') options = 'qB';
+
+    ami.action({
+        action: 'Originate',
+        channel: `PJSIP/4001`, // Supervisor handset
+        context: 'tenant_28b0d0e2_context',
+        exten: `*55${agentExtension}`, // Assuming *55 ChanSpy prefix
+        priority: 1,
+        variable: `SPY_OPTIONS=${options}`
+    }, (err, res) => {
+        if (err) socket.emit('supervisor:error', { action, error: err.message });
+        else socket.emit('supervisor:success', { action, agentExtension });
+    });
+}
+
 httpServer.listen(config.socket.port, () => {
     log('info', `🚀 Watcher running on port ${config.socket.port}`);
     connectAMI();

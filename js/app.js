@@ -815,18 +815,29 @@ function renderActiveCalls(calls) {
     calls.forEach(call => {
         const item = document.createElement('div');
         item.className = 'supervisor-call-item';
-        const duration = call.duration || Math.floor((new Date() - new Date(call.startTime)) / 1000);
+        
+        // Calculate duration
+        let duration = call.duration || 0;
+        if (call.startTime && !call.duration) {
+            duration = Math.floor((new Date() - new Date(call.startTime)) / 1000);
+        }
+        
+        // Determine call status - check both answered flag and state
+        const isAnswered = call.answered === true || call.state === 'Answered' || call.state === 'Up';
+        const statusClass = isAnswered ? 'answered' : 'ringing';
+        const statusText = isAnswered ? 'Answered' : 'Ringing';
+        
         item.innerHTML = `
             <div class="call-info">
                 <div class="call-header">
                     <span class="call-agent"><i class="fa-solid fa-user"></i> ${call.agent || call.src || 'Unknown'}</span>
-                    <span class="call-status ${call.answered ? 'answered' : 'ringing'}">${call.answered ? 'Answered' : 'Ringing'}</span>
+                    <span class="call-status ${statusClass}">${statusText}</span>
                 </div>
                 <div class="call-parties">${call.callerid || call.caller || 'Unknown'} → ${call.destination || call.called || 'Unknown'}</div>
-                <div class="call-meta">Duration: ${formatDuration(duration)} • ${call.state || 'Active'}</div>
+                <div class="call-meta">Duration: ${formatDuration(duration)} • ${call.state || (isAnswered ? 'Active' : 'Connecting')}</div>
             </div>
             <div class="call-actions">
-                <button class="btn-icon-only monitor-btn" data-agent="${call.agent || call.src}" title="Monitor (Listen Only)">
+                <button class="btn-icon-only monitor-btn" data-agent="${call.agent || call.src}" data-uniqueid="${call.uniqueid || ''}" title="Monitor (Listen Only)">
                     <i class="fa-solid fa-ear-listen"></i>
                 </button>
                 <button class="btn-icon-only whisper-btn" data-agent="${call.agent || call.src}" title="Whisper (Talk to Agent)">
@@ -838,14 +849,63 @@ function renderActiveCalls(calls) {
             </div>
         `;
 
-        item.querySelector('.monitor-btn').addEventListener('click', () => {
-            supervisorManager.monitorCall(call.agent || call.src, call.uniqueid);
+        // Attach event listeners with proper error handling
+        const monitorBtn = item.querySelector('.monitor-btn');
+        const whisperBtn = item.querySelector('.whisper-btn');
+        const bargeBtn = item.querySelector('.barge-btn');
+        
+        monitorBtn.addEventListener('click', async () => {
+            monitorBtn.disabled = true;
+            monitorBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            try {
+                await supervisorManager.monitorCall(call.agent || call.src, call.uniqueid);
+                monitorBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
+                setTimeout(() => {
+                    monitorBtn.innerHTML = '<i class="fa-solid fa-ear-listen"></i>';
+                    monitorBtn.disabled = false;
+                }, 2000);
+            } catch (error) {
+                console.error("Monitor failed:", error);
+                alert("Monitor failed: " + error.message);
+                monitorBtn.innerHTML = '<i class="fa-solid fa-ear-listen"></i>';
+                monitorBtn.disabled = false;
+            }
         });
-        item.querySelector('.whisper-btn').addEventListener('click', () => {
-            supervisorManager.whisperToCall(call.agent || call.src);
+        
+        whisperBtn.addEventListener('click', async () => {
+            whisperBtn.disabled = true;
+            whisperBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            try {
+                await supervisorManager.whisperToCall(call.agent || call.src);
+                whisperBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
+                setTimeout(() => {
+                    whisperBtn.innerHTML = '<i class="fa-solid fa-comment-dots"></i>';
+                    whisperBtn.disabled = false;
+                }, 2000);
+            } catch (error) {
+                console.error("Whisper failed:", error);
+                alert("Whisper failed: " + error.message);
+                whisperBtn.innerHTML = '<i class="fa-solid fa-comment-dots"></i>';
+                whisperBtn.disabled = false;
+            }
         });
-        item.querySelector('.barge-btn').addEventListener('click', () => {
-            supervisorManager.bargeIntoCall(call.agent || call.src);
+        
+        bargeBtn.addEventListener('click', async () => {
+            bargeBtn.disabled = true;
+            bargeBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            try {
+                await supervisorManager.bargeIntoCall(call.agent || call.src);
+                bargeBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
+                setTimeout(() => {
+                    bargeBtn.innerHTML = '<i class="fa-solid fa-phone"></i>';
+                    bargeBtn.disabled = false;
+                }, 2000);
+            } catch (error) {
+                console.error("Barge failed:", error);
+                alert("Barge failed: " + error.message);
+                bargeBtn.innerHTML = '<i class="fa-solid fa-phone"></i>';
+                bargeBtn.disabled = false;
+            }
         });
 
         container.appendChild(item);
@@ -865,15 +925,28 @@ function renderAgents(agents) {
     agents.forEach(agent => {
         const item = document.createElement('div');
         item.className = `supervisor-agent-item status-${agent.status}`;
+        
+        // Format status text for display
+        const statusText = agent.status ? 
+            agent.status.charAt(0).toUpperCase() + agent.status.slice(1) : 
+            'Unknown';
+        
+        // Get current call info from active calls
+        const activeCalls = supervisorManager.getActiveCalls();
+        const agentCall = activeCalls.find(call => (call.agent || call.src) === agent.extension);
+        const callInfo = agentCall ? 
+            `${agentCall.callerid || agentCall.caller || 'Unknown'} → ${agentCall.destination || agentCall.called || 'Unknown'}` : 
+            null;
+        
         item.innerHTML = `
             <div class="agent-info">
                 <div class="agent-header">
-                    <span class="agent-extension"><i class="fa-solid fa-phone"></i> ${agent.extension}</span>
-                    <span class="agent-status-badge status-${agent.status}">${agent.status}</span>
+                    <span class="agent-extension"><i class="fa-solid fa-user"></i> ${agent.extension}</span>
+                    <span class="agent-status-badge status-${agent.status}">${statusText}</span>
                 </div>
                 <div class="agent-meta">
-                    ${agent.currentCall ? `On call: ${agent.currentCall}` : 'Available'}
-                    ${agent.callsToday ? ` • ${agent.callsToday} calls today` : ''}
+                    ${callInfo ? `<i class="fa-solid fa-phone"></i> ${callInfo}` : (agent.status === 'available' ? '<i class="fa-solid fa-check-circle"></i> Available' : '')}
+                    ${agent.callsToday ? ` • <i class="fa-solid fa-chart-line"></i> ${agent.callsToday} calls today` : ''}
                 </div>
             </div>
         `;

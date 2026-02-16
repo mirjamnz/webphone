@@ -173,16 +173,44 @@ export class SupervisorManager {
             throw new Error("Not connected to AMI Watcher service");
         }
 
-        try {
-            this.socket.emit('supervisor:monitor', {
-                agentExtension,
-                callUniqueId
-            });
-            return true;
-        } catch (error) {
-            console.error("Monitor call failed:", error);
-            return false;
-        }
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error("Monitor request timed out"));
+            }, 10000);
+
+            const successHandler = (data) => {
+                if (data.agentExtension === agentExtension && data.action === 'monitor') {
+                    clearTimeout(timeout);
+                    this.socket.off('supervisor:success', successHandler);
+                    this.socket.off('supervisor:error', errorHandler);
+                    resolve(true);
+                }
+            };
+
+            const errorHandler = (data) => {
+                if (data.agentExtension === agentExtension && data.action === 'monitor') {
+                    clearTimeout(timeout);
+                    this.socket.off('supervisor:success', successHandler);
+                    this.socket.off('supervisor:error', errorHandler);
+                    reject(new Error(data.error || "Monitor failed"));
+                }
+            };
+
+            this.socket.once('supervisor:success', successHandler);
+            this.socket.once('supervisor:error', errorHandler);
+
+            try {
+                this.socket.emit('supervisor:monitor', {
+                    agentExtension,
+                    callUniqueId
+                });
+            } catch (error) {
+                clearTimeout(timeout);
+                this.socket.off('supervisor:success', successHandler);
+                this.socket.off('supervisor:error', errorHandler);
+                reject(error);
+            }
+        });
     }
 
     /**
@@ -200,15 +228,43 @@ export class SupervisorManager {
             throw new Error("Not connected to AMI Watcher service");
         }
 
-        try {
-            this.socket.emit('supervisor:whisper', {
-                agentExtension
-            });
-            return true;
-        } catch (error) {
-            console.error("Whisper failed:", error);
-            return false;
-        }
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error("Whisper request timed out"));
+            }, 10000);
+
+            const successHandler = (data) => {
+                if (data.agentExtension === agentExtension && data.action === 'whisper') {
+                    clearTimeout(timeout);
+                    this.socket.off('supervisor:success', successHandler);
+                    this.socket.off('supervisor:error', errorHandler);
+                    resolve(true);
+                }
+            };
+
+            const errorHandler = (data) => {
+                if (data.agentExtension === agentExtension && data.action === 'whisper') {
+                    clearTimeout(timeout);
+                    this.socket.off('supervisor:success', successHandler);
+                    this.socket.off('supervisor:error', errorHandler);
+                    reject(new Error(data.error || "Whisper failed"));
+                }
+            };
+
+            this.socket.once('supervisor:success', successHandler);
+            this.socket.once('supervisor:error', errorHandler);
+
+            try {
+                this.socket.emit('supervisor:whisper', {
+                    agentExtension
+                });
+            } catch (error) {
+                clearTimeout(timeout);
+                this.socket.off('supervisor:success', successHandler);
+                this.socket.off('supervisor:error', errorHandler);
+                reject(error);
+            }
+        });
     }
 
     /**
@@ -226,15 +282,43 @@ export class SupervisorManager {
             throw new Error("Not connected to AMI Watcher service");
         }
 
-        try {
-            this.socket.emit('supervisor:barge', {
-                agentExtension
-            });
-            return true;
-        } catch (error) {
-            console.error("Barge failed:", error);
-            return false;
-        }
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error("Barge request timed out"));
+            }, 10000);
+
+            const successHandler = (data) => {
+                if (data.agentExtension === agentExtension && data.action === 'barge') {
+                    clearTimeout(timeout);
+                    this.socket.off('supervisor:success', successHandler);
+                    this.socket.off('supervisor:error', errorHandler);
+                    resolve(true);
+                }
+            };
+
+            const errorHandler = (data) => {
+                if (data.agentExtension === agentExtension && data.action === 'barge') {
+                    clearTimeout(timeout);
+                    this.socket.off('supervisor:success', successHandler);
+                    this.socket.off('supervisor:error', errorHandler);
+                    reject(new Error(data.error || "Barge failed"));
+                }
+            };
+
+            this.socket.once('supervisor:success', successHandler);
+            this.socket.once('supervisor:error', errorHandler);
+
+            try {
+                this.socket.emit('supervisor:barge', {
+                    agentExtension
+                });
+            } catch (error) {
+                clearTimeout(timeout);
+                this.socket.off('supervisor:success', successHandler);
+                this.socket.off('supervisor:error', errorHandler);
+                reject(error);
+            }
+        });
     }
 
     /**
