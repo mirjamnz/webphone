@@ -8,90 +8,126 @@
 
 
  <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PBX Agent Manager</title>
-    <style>
-        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f0f2f5; }
-        .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 350px; }
-        h2 { text-align: center; color: #333; margin-top: 0; }
-        .form-group { margin-bottom: 1rem; }
-        label { display: block; margin-bottom: 0.5rem; color: #666; }
-        input, select { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; padding: 0.75rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
-        button:hover { background-color: #0056b3; }
-        #status { margin-top: 1rem; text-align: center; font-size: 0.9rem; }
-        .success { color: green; }
-        .error { color: red; }
-    </style>
-</head>
-<body>
-
-<div class="card">
-    <h2>➕ Add Agent</h2>
-    
-    <div class="form-group">
-        <label>Tenant ID</label>
-        <input type="text" id="tenantId" value="28b0d0e2-0a39-48c0-84f9-d340472273a9" placeholder="Enter UUID">
-    </div>
-
-    <div class="form-group">
-        <label>Extension</label>
-        <input type="number" id="extension" placeholder="e.g. 4002">
-    </div>
-
-    <div class="form-group">
-        <label>Password</label>
-        <input type="text" id="password" placeholder="SecretPassword123">
-    </div>
-
-    <button onclick="addAgent()">Create Agent</button>
-    <div id="status"></div>
-</div>
-
-<script>
-    async function addAgent() {
-        const tenantId = document.getElementById('tenantId').value;
-        const extension = document.getElementById('extension').value;
-        const password = document.getElementById('password').value;
-        const statusEl = document.getElementById('status');
-
-        if(!tenantId || !extension || !password) {
-            statusEl.textContent = "Please fill in all fields.";
-            statusEl.className = "error";
-            return;
-        }
-
-        statusEl.textContent = "Processing...";
-        statusEl.className = "";
-
-        try {
-            const res = await fetch('/api/agents', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tenantId, extension, password })
-            });
-
-            const data = await res.json();
-
-            if (data.success) {
-                statusEl.textContent = `✅ ${data.message}`;
-                statusEl.className = "success";
-                // Clear fields (except tenant)
-                document.getElementById('extension').value = '';
-                document.getElementById('password').value = '';
-            } else {
-                statusEl.textContent = `❌ Error: ${data.error}`;
-                statusEl.className = "error";
-            }
-        } catch (e) {
-            statusEl.textContent = "❌ Connection failed.";
-            statusEl.className = "error";
-        }
-    }
-</script>
-
-</body>
-</html>
+ <html lang="en">
+ <head>
+     <meta charset="UTF-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+     <title>PBX Admin Portal</title>
+     <style>
+         body { font-family: sans-serif; background: #f4f4f9; padding: 20px; }
+         .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 400px; margin: 0 auto; }
+         .form-group { margin-bottom: 15px; }
+         label { display: block; margin-bottom: 5px; font-weight: bold; }
+         input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+         button { width: 100%; padding: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
+         button:hover { background: #218838; }
+         #status { margin-top: 15px; padding: 10px; border-radius: 4px; display: none; }
+         .success { background: #d4edda; color: #155724; display: block !important; }
+         .error { background: #f8d7da; color: #721c24; display: block !important; }
+     </style>
+ </head>
+ <body>
+ 
+ <div id="loginOverlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; display:flex; align-items:center; justify-content:center;">
+     <div style="background:white; padding:30px; border-radius:8px; width:300px; text-align:center;">
+         <h3>PBX Admin Login</h3>
+         <input type="text" id="adminUser" placeholder="Username" style="margin-bottom:10px;">
+         <input type="password" id="adminPass" placeholder="Password" style="margin-bottom:10px;">
+         <button onclick="attemptLogin()" style="background:#007bff;">Login</button>
+         <p id="loginError" style="color:red; display:none; margin-top:10px;">Invalid Credentials</p>
+     </div>
+ </div>
+ 
+ <div class="card">
+     <h2>➕ Add Agent</h2>
+     <div class="form-group">
+         <label>Tenant ID</label>
+         <input type="text" id="tenantId" placeholder="e.g. 28b0d0e2...">
+     </div>
+     <div class="form-group">
+         <label>Extension Number</label>
+         <input type="text" id="extension" placeholder="e.g. 4001">
+     </div>
+     <div class="form-group">
+         <label>SIP Password</label>
+         <input type="password" id="password" placeholder="Secret Password">
+     </div>
+     <button onclick="addAgent()">Create Agent</button>
+     <div id="status"></div>
+ </div>
+ 
+ <script>
+     // Handle Login
+     async function attemptLogin() {
+         const username = document.getElementById('adminUser').value;
+         const password = document.getElementById('adminPass').value;
+ 
+         try {
+             const response = await fetch('/api/login', {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({ username, password })
+             });
+ 
+             const result = await response.json();
+ 
+             if (result.success) {
+                 document.getElementById('loginOverlay').style.display = 'none';
+                 document.getElementById('loginError').style.display = 'none';
+             } else {
+                 document.getElementById('loginError').style.display = 'block';
+             }
+         } catch (err) {
+             alert("Connection error to server");
+         }
+     }
+ 
+     // Handle Agent Creation
+     async function addAgent() {
+         const tenantId = document.getElementById('tenantId').value;
+         const extension = document.getElementById('extension').value;
+         const password = document.getElementById('password').value;
+         const statusEl = document.getElementById('status');
+ 
+         if(!tenantId || !extension || !password) {
+             statusEl.textContent = "Please fill in all fields.";
+             statusEl.className = "error";
+             return;
+         }
+ 
+         statusEl.textContent = "Processing...";
+         statusEl.className = "";
+ 
+         try {
+             const response = await fetch('/api/agents', {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({ tenantId, extension, password })
+             });
+ 
+             // Check if session expired
+             if (response.status === 401) {
+                 document.getElementById('loginOverlay').style.display = 'flex';
+                 statusEl.textContent = "Session expired. Please log in again.";
+                 statusEl.className = "error";
+                 return;
+             }
+ 
+             const data = await response.json();
+ 
+             if (data.success) {
+                 statusEl.textContent = data.message;
+                 statusEl.className = "success";
+             } else {
+                 statusEl.textContent = "Error: " + data.error;
+                 statusEl.className = "error";
+             }
+         } catch (error) {
+             statusEl.textContent = "Network error occurred.";
+             statusEl.className = "error";
+         }
+     }
+ </script>
+ 
+ </body>
+ </html>
