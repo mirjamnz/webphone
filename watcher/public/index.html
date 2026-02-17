@@ -1,0 +1,97 @@
+/**
+ * Asterisk Manager Interface to add agents to the PBX
+  portal: http://35.201.27.239:8111/
+  mirjam@bdl-pbx:~$ cd /home/helper/watcher
+  mirjam@bdl-pbx:/home/helper/watcher$ node portal.js
+🌍 PBX Portal running at http://localhost:8111
+ */
+
+
+ <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PBX Agent Manager</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f0f2f5; }
+        .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 350px; }
+        h2 { text-align: center; color: #333; margin-top: 0; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; margin-bottom: 0.5rem; color: #666; }
+        input, select { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 0.75rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
+        button:hover { background-color: #0056b3; }
+        #status { margin-top: 1rem; text-align: center; font-size: 0.9rem; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>➕ Add Agent</h2>
+    
+    <div class="form-group">
+        <label>Tenant ID</label>
+        <input type="text" id="tenantId" value="28b0d0e2-0a39-48c0-84f9-d340472273a9" placeholder="Enter UUID">
+    </div>
+
+    <div class="form-group">
+        <label>Extension</label>
+        <input type="number" id="extension" placeholder="e.g. 4002">
+    </div>
+
+    <div class="form-group">
+        <label>Password</label>
+        <input type="text" id="password" placeholder="SecretPassword123">
+    </div>
+
+    <button onclick="addAgent()">Create Agent</button>
+    <div id="status"></div>
+</div>
+
+<script>
+    async function addAgent() {
+        const tenantId = document.getElementById('tenantId').value;
+        const extension = document.getElementById('extension').value;
+        const password = document.getElementById('password').value;
+        const statusEl = document.getElementById('status');
+
+        if(!tenantId || !extension || !password) {
+            statusEl.textContent = "Please fill in all fields.";
+            statusEl.className = "error";
+            return;
+        }
+
+        statusEl.textContent = "Processing...";
+        statusEl.className = "";
+
+        try {
+            const res = await fetch('/api/agents', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tenantId, extension, password })
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+                statusEl.textContent = `✅ ${data.message}`;
+                statusEl.className = "success";
+                // Clear fields (except tenant)
+                document.getElementById('extension').value = '';
+                document.getElementById('password').value = '';
+            } else {
+                statusEl.textContent = `❌ Error: ${data.error}`;
+                statusEl.className = "error";
+            }
+        } catch (e) {
+            statusEl.textContent = "❌ Connection failed.";
+            statusEl.className = "error";
+        }
+    }
+</script>
+
+</body>
+</html>
