@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebRTC Call Center for BrandDevelopers</title>
+    <title>TVShop WebRTC Phone</title>
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.4/dist/jquery.min.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -14,9 +14,9 @@
 <div id="loginPage" class="login-overlay">
     <div class="login-card">
         <div class="login-logo">
-            <i class="fa-solid fa-headset"></i>
+            <img src="public/images/TVShopLogo.jpeg" alt="TVShop Logo" class="brand-logo">
         </div>
-        <h2>Welcome to BDL-PBX</h2>
+        <h2>Welcome to TVShop Phone</h2>
         <p>Please sign in to access your phone extension.</p>
         
         <div class="login-form">
@@ -56,7 +56,10 @@
     <div class="panel sidebar">
         
         <div class="sidebar-header">
-            <h3><i class="fa-solid fa-headset"></i> Agent Panel</h3>
+            <div class="header-brand">
+                <img src="public/images/TVShopLogoSmall.jpeg" alt="TVShop" class="brand-logo-small">
+                <h3>Agent Panel</h3>
+            </div>
             <button class="config-btn" id="btnShowConfig" title="SIP Settings">
                 <i class="fa-solid fa-gear"></i>
             </button>

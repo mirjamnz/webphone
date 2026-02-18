@@ -3,7 +3,7 @@ export class AudioManager {
         this.settings = settings;
         
         // Ringtone (MP3)
-        this.ringAudio = new Audio('sounds/ringing.mp3'); 
+        this.ringAudio = new Audio('public/sounds/ringing.mp3'); 
         this.ringAudio.loop = true;
 
         // Remote Audio Element

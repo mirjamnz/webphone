@@ -23,6 +23,90 @@ body {
     align-items: center;
 }
 
+/* --- Login Page --- */
+.login-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.login-card {
+    background: var(--bg-panel);
+    border-radius: 20px;
+    padding: 40px;
+    width: 90%;
+    max-width: 400px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--border);
+    text-align: center;
+}
+
+.login-logo {
+    margin-bottom: 30px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.brand-logo {
+    max-width: 200px;
+    height: auto;
+    object-fit: contain;
+}
+
+.login-card h2 {
+    margin: 0 0 10px 0;
+    color: var(--text-main);
+    font-size: 1.5rem;
+}
+
+.login-card p {
+    margin: 0 0 30px 0;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.login-form {
+    text-align: left;
+}
+
+.input-group {
+    margin-bottom: 20px;
+}
+
+.input-group label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.advanced-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    cursor: pointer;
+    margin: 20px 0;
+    padding: 8px;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.advanced-toggle:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-main);
+}
+
 /* --- Layout --- */
 .app-container {
     display: grid;
@@ -52,6 +136,18 @@ body {
     margin-bottom: 20px;
     padding-bottom: 15px;
     border-bottom: 1px solid var(--border);
+}
+
+.header-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.brand-logo-small {
+    height: 32px;
+    width: auto;
+    object-fit: contain;
 }
 
 .config-btn {
