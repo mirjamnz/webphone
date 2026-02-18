@@ -44,6 +44,7 @@ const ui = {
         mic: document.getElementById('cfgMic'),
         speaker: document.getElementById('cfgSpeaker'),
         ringer: document.getElementById('cfgRinging'),
+        ringtone: document.getElementById('cfgRingtone'),
         blfList: document.getElementById('cfgBlfList')
     },
     panels: {
@@ -315,6 +316,7 @@ document.getElementById('btnShowConfig').addEventListener('click', () => {
     ui.inputs.pass.value = settings.get('password') || '';
     ui.inputs.domain.value = settings.get('domain') || CONFIG.DEFAULT_DOMAIN;
     ui.inputs.wss.value = settings.get('wssUrl') || CONFIG.DEFAULT_WSS;
+    ui.inputs.ringtone.value = settings.get('ringtoneFile') || 'ringing.mp3';
     ui.panels.config.classList.remove('hidden');
 });
 
@@ -330,7 +332,8 @@ document.getElementById('btnSaveConfig').addEventListener('click', () => {
         wssUrl: ui.inputs.wss.value,
         micId: ui.inputs.mic.value,
         speakerId: ui.inputs.speaker.value,
-        ringerId: ui.inputs.ringer.value
+        ringerId: ui.inputs.ringer.value,
+        ringtoneFile: ui.inputs.ringtone.value
     });
     ui.panels.config.classList.add('hidden');
     phone.connect();

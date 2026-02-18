@@ -16,7 +16,8 @@ export class SettingsManager {
             wssUrl: CONFIG.DEFAULT_WSS,
             micId: 'default',
             speakerId: 'default',
-            ringerId: 'default'
+            ringerId: 'default',
+            ringtoneFile: 'ringing.mp3'
         };
 
         if (!stored) return defaults;
