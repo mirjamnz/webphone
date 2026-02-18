@@ -5,8 +5,8 @@
 
 export const CONFIG = { 
     // Default SIP Domain & WSS Server (Secure)
-    DEFAULT_DOMAIN: "bdl-pbx.itnetworld.co.nz",
-    DEFAULT_WSS: "wss://bdl-pbx.itnetworld.co.nz:8089/ws",
+    DEFAULT_DOMAIN: "wss.hero.co.nz",
+    DEFAULT_WSS: "wss://wss.hero.co.nz:7443/",
     
     // API Configuration (For Call History/CDR)
     CDR_API_URL: "https://bdl-pbx.itnetworld.co.nz/api/cdr",
