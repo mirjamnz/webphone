@@ -8,23 +8,13 @@ import { UserManager } from './user.js';
 import { QueueManager } from './queue.js';
 import { RecordingsManager } from './recordings.js';
 import { SupervisorManager } from './supervisor.js'; 
-import { DashboardManager } from './dashboard.js'; // [NEW] Import the Hero Dashboard Manager
 
-/**
- * Main Application Logic
- * Integrates all modules (Phone, Audio, UI, Dashboard)
- */
-
-// 1. Initialize Settings
 const settings = new SettingsManager();
 
-// 2. Initialize User Manager (Handles roles and permissions)
+// Initialize User Manager
 const userManager = new UserManager(settings);
 
-// 3. Initialize Hero Dashboard Manager (Handles API polling for the right-hand panel)
-const dashboardManager = new DashboardManager(settings);
-
-// 4. Initialize History Manager
+// Initialize History
 const historyManager = new HistoryManager(settings, {
     onRedial: (number) => {
         ui.panels.history.classList.add('hidden'); // Close modal
@@ -34,10 +24,8 @@ const historyManager = new HistoryManager(settings, {
     }
 });
 
-// 5. Initialize Audio Manager
 const audio = new AudioManager(settings);
 
-// 6. UI References (DOM Elements)
 const ui = {
     dialString: document.getElementById('dialString'),
     loginPage: document.getElementById('loginPage'),
@@ -79,20 +67,14 @@ const ui = {
     btnLine1: document.getElementById('btnLine1'),
     btnLine2: document.getElementById('btnLine2'),
     btnCall: document.getElementById('btnCall'),
-    dndToggle: document.getElementById('dndToggle'),
-    // Dashboard Stats elements
-    statActiveCalls: document.getElementById('statActiveCalls'),
-    statAgents: document.getElementById('statAgents'),
-    statQueues: document.getElementById('statQueues')
+    dndToggle: document.getElementById('dndToggle')
 };
 
-// Application State
 let isConsulting = false; 
 let line1Num = "Line 1"; 
 let line2Num = "Line 2"; 
 let blfManager = null; 
 
-// 7. Define Phone Event Callbacks
 const phoneCallbacks = {
     onStatus: (state) => {
         ui.statusText.innerText = state;
@@ -178,15 +160,17 @@ const phoneCallbacks = {
     }
 };
 
-// 8. Initialize Core Engines
 const phone = new PhoneEngine(CONFIG, settings, audio, phoneCallbacks);
+
+// Initialize Queue Manager
 const queueManager = new QueueManager(phone, userManager, settings);
+
+// Initialize Recordings Manager
 const recordingsManager = new RecordingsManager(userManager);
 
-// Initialize Old Supervisor Manager (Optional: Keep if you use it for barge/whisper commands via Asterisk directly)
+// Initialize Supervisor Manager (connects to Socket.io if supervisor)
 const supervisorManager = new SupervisorManager(phone, userManager);
 
-// 9. Expose global app object for debugging/buttons
 window.app = {
     callSpecial: (num) => {
         phone.call(num).catch(e => alert(e.message));
@@ -194,11 +178,8 @@ window.app = {
     user: userManager,
     queue: queueManager,
     recordings: recordingsManager,
-    supervisor: supervisorManager, // Old supervisor logic
-    dashboard: dashboardManager    // [NEW] Hero Dashboard logic
+    supervisor: supervisorManager
 };
-
-// --- Helper Functions ---
 
 function setCallButtonToConsultMode() {
     ui.btnCall.classList.remove('btn-success');
@@ -232,7 +213,7 @@ function updateLineUI(activeLine) {
     }
 }
 
-// --- INITIALIZATION ---
+// --- INIT ---
 window.addEventListener('DOMContentLoaded', async () => {
     
     // 1. Attach call control listeners first
@@ -244,11 +225,11 @@ window.addEventListener('DOMContentLoaded', async () => {
     populateDeviceSelect(ui.inputs.speaker, devices.outputs, settings.get('speakerId'));
     populateDeviceSelect(ui.inputs.ringer, devices.outputs, settings.get('ringerId'));
     
-    // 3. Pre-fill Advanced Settings in Login
+    // 2. Pre-fill Advanced Settings in Login
     ui.loginInputs.domain.value = settings.get('domain') || CONFIG.DEFAULT_DOMAIN;
     ui.loginInputs.wss.value = settings.get('wssUrl') || CONFIG.DEFAULT_WSS;
 
-    // 4. CHECK LOGIN STATUS
+    // 3. CHECK LOGIN STATUS
     const savedUser = settings.get('username');
     const savedPass = settings.get('password');
 
@@ -257,27 +238,20 @@ window.addEventListener('DOMContentLoaded', async () => {
         ui.loginPage.classList.add('hidden');
         ui.mainApp.classList.remove('hidden');
         
-        // Initialize user profile from extension
-        await userManager.initializeFromExtension(savedUser);
-        
-        // Update UI based on role
-        updateUIForRole(userManager.role);
-        
-        // Initialize supervisor features if applicable
-        if (userManager.hasRole('supervisor')) {
-            renderQueueList();
-            
-            // [NEW] Start the Real-time Hero Dashboard Polling
-            dashboardManager.start();
-
-            // [OLD] Disable old socket-based dashboard updates
-            // supervisorManager.initialize(); 
-            
-            // Setup tab listeners only (UI switching)
-            setupSupervisorTabs();
-        }
-        
-        phone.connect();
+    // Initialize user profile from extension
+    await userManager.initializeFromExtension(savedUser);
+    
+    // Update UI based on role
+    updateUIForRole(userManager.role);
+    
+    // Initialize supervisor features if applicable
+    if (userManager.hasRole('supervisor')) {
+        renderQueueList();
+        // Initialize Socket.io connection for supervisor
+        supervisorManager.initialize();
+    }
+    
+    phone.connect();
     } else {
         // Not Logged In -> Show Splash
         ui.loginPage.classList.remove('hidden');
@@ -285,7 +259,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
-// --- LOGIN PAGE EVENTS ---
+// --- LOGIN PAGE LOGIC ---
 document.getElementById('btnToggleAdvanced').addEventListener('click', () => {
     document.getElementById('loginAdvanced').classList.toggle('hidden');
 });
@@ -322,12 +296,10 @@ document.getElementById('btnDoLogin').addEventListener('click', async () => {
     // Initialize supervisor features if applicable
     if (userManager.hasRole('supervisor')) {
         renderQueueList();
-        
-        // [NEW] Start the Real-time Hero Dashboard Polling
-        dashboardManager.start();
-        
-        // Setup tab listeners only
-        setupSupervisorTabs();
+        // Initialize Socket.io connection for supervisor
+        supervisorManager.initialize();
+        // Setup supervisor dashboard callbacks
+        setupSupervisorDashboard();
     }
     
     // Connect
@@ -463,7 +435,10 @@ async function renderQueueList() {
     });
 }
 
-// --- STANDARD CALL CONTROL EVENTS ---
+// Initialize supervisor features when role is detected
+// Note: This runs after DOMContentLoaded, so we check after user initialization
+
+// --- STANDARD EVENTS ---
 // Attach event listeners after DOM is ready
 function attachCallControlListeners() {
     console.log("Attaching call control event listeners...");
@@ -476,7 +451,13 @@ function attachCallControlListeners() {
     const btnTransfer = document.getElementById('btnTransfer');
     
     if (!btnHangup || !btnMute || !btnConsult || !btnHold || !btnTransfer) {
-        console.error("Call control buttons not found in DOM!");
+        console.error("Call control buttons not found in DOM!", {
+            btnHangup: !!btnHangup,
+            btnMute: !!btnMute,
+            btnConsult: !!btnConsult,
+            btnHold: !!btnHold,
+            btnTransfer: !!btnTransfer
+        });
         return;
     }
     
@@ -516,22 +497,36 @@ function attachCallControlListeners() {
         });
     });
 
-    // Replace and re-attach listeners to ensure clean state
+    // Attach listeners directly (remove any existing first by cloning)
     btnHangup.replaceWith(btnHangup.cloneNode(true));
-    document.getElementById('btnHangup').addEventListener('click', (e) => {
+    const newBtnHangup = document.getElementById('btnHangup');
+    newBtnHangup.addEventListener('click', (e) => {
         e.preventDefault();
-        try { phone.hangup(); } catch (error) { console.error("Hangup error:", error); }
+        e.stopPropagation();
+        console.log("Hangup button clicked");
+        try {
+            phone.hangup();
+        } catch (error) {
+            console.error("Hangup error:", error);
+            alert("Hangup failed: " + error.message);
+        }
     });
 
     btnMute.replaceWith(btnMute.cloneNode(true));
     const newBtnMute = document.getElementById('btnMute');
     newBtnMute.addEventListener('click', (e) => {
         e.preventDefault();
+        e.stopPropagation();
+        console.log("Mute button clicked");
         try {
             const isMuted = phone.toggleMute();
+            console.log("Mute toggled, new state:", isMuted);
             newBtnMute.classList.toggle('active', isMuted);
             ui.btnMute = newBtnMute;
-        } catch (error) { console.error("Mute error:", error); }
+        } catch (error) {
+            console.error("Mute error:", error);
+            alert("Mute failed: " + error.message);
+        }
     });
 
     btnHold.replaceWith(btnHold.cloneNode(true));
@@ -547,7 +542,8 @@ function attachCallControlListeners() {
     });
 
     btnTransfer.replaceWith(btnTransfer.cloneNode(true));
-    document.getElementById('btnTransfer').addEventListener('click', () => {
+    const newBtnTransfer = document.getElementById('btnTransfer');
+    newBtnTransfer.addEventListener('click', () => {
         const num = prompt("Enter extension to transfer to:");
         if (num) {
             phone.blindTransfer(num).then(success => {
@@ -557,16 +553,24 @@ function attachCallControlListeners() {
     });
 
     btnConsult.replaceWith(btnConsult.cloneNode(true));
-    document.getElementById('btnConsult').addEventListener('click', async (e) => {
+    const newBtnConsult = document.getElementById('btnConsult');
+    newBtnConsult.addEventListener('click', async (e) => {
         e.preventDefault();
+        e.stopPropagation();
+        console.log("Consult button clicked");
+        
         if (!phone.isCallActive()) {
             alert("No active call to consult");
             return;
         }
+        
         try {
             const num = prompt("Enter extension to consult with:");
-            if (!num || num.trim() === '') return;
+            if (!num || num.trim() === '') {
+                return; // User cancelled
+            }
             
+            console.log("Starting consultation with:", num);
             line2Num = num.trim();
             
             // Hold the current call if not already held
@@ -576,6 +580,7 @@ function attachCallControlListeners() {
                 currentBtnHold.classList.toggle('active', isHeld);
             }
             
+            // Start the consultation call
             await phone.startConsultation(num.trim());
             
             // Show consult controls
@@ -585,11 +590,13 @@ function attachCallControlListeners() {
             resetCallButton();
             
             // Hide transfer and consult buttons
-            document.getElementById('btnTransfer').classList.add('hidden');
-            document.getElementById('btnConsult').classList.add('hidden');
+            const currentBtnTransfer = document.getElementById('btnTransfer');
+            const currentBtnConsult = document.getElementById('btnConsult');
+            currentBtnTransfer.classList.add('hidden');
+            currentBtnConsult.classList.add('hidden');
         } catch (error) {
             console.error("Consult error:", error);
-            alert("Consult failed: " + error.message);
+            alert("Consult failed: " + (error.message || error));
         }
     });
 
@@ -607,8 +614,10 @@ function attachCallControlListeners() {
             phone.mergeCalls().then(success => {
                 if (success) {
                     ui.btnLine1.classList.add('active-line');
+                    ui.btnLine1.classList.remove('held-line');
                     ui.btnLine1.innerHTML = `<i class="fa-solid fa-user"></i> <span>${line1Num} (Conf)</span>`;
                     ui.btnLine2.classList.add('active-line');
+                    ui.btnLine2.classList.remove('held-line');
                     ui.btnLine2.innerHTML = `<i class="fa-solid fa-user-doctor"></i> <span>${line2Num} (Conf)</span>`;
                 }
             });
@@ -634,12 +643,22 @@ function attachCallControlListeners() {
             const currentBtnHold = document.getElementById('btnHold');
             if (currentBtnHold) currentBtnHold.classList.remove('active'); 
             ui.consultControls.classList.add('hidden');
-            document.getElementById('btnTransfer').classList.remove('hidden');
-            document.getElementById('btnConsult').classList.remove('hidden');
+            const currentBtnTransfer = document.getElementById('btnTransfer');
+            const currentBtnConsult = document.getElementById('btnConsult');
+            if (currentBtnTransfer) currentBtnTransfer.classList.remove('hidden');
+            if (currentBtnConsult) currentBtnConsult.classList.remove('hidden');
         });
     }
     
     console.log("Call control event listeners attached successfully");
+}
+
+// Attach listeners when DOM is ready
+if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', attachCallControlListeners);
+} else {
+    // DOM already loaded
+    attachCallControlListeners();
 }
 
 function populateDeviceSelect(selectEl, devices, selectedId) {
@@ -678,6 +697,8 @@ function stopTimer() {
 
 /**
  * Update UI elements based on user role
+ * Shows/hides features based on permissions
+ * @param {string} role - User role ('agent' | 'supervisor' | 'admin')
  */
 function updateUIForRole(role) {
     const isSupervisor = role === 'supervisor' || role === 'admin';
@@ -704,6 +725,22 @@ function updateUIForRole(role) {
         if (supervisorDashboard) supervisorDashboard.classList.add('hidden');
         if (idleState) idleState.classList.remove('hidden');
     }
+    
+    // Update sidebar header with role badge
+    const sidebarHeader = document.querySelector('.sidebar-header h3');
+    if (sidebarHeader && role !== 'agent') {
+        // Remove existing badge if any
+        const existingBadge = sidebarHeader.querySelector('.role-badge');
+        if (existingBadge) existingBadge.remove();
+        
+        const badge = document.createElement('span');
+        badge.className = 'role-badge';
+        badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+        badge.style.cssText = 'font-size: 0.7rem; padding: 2px 8px; background: var(--primary); border-radius: 12px; margin-left: 8px;';
+        sidebarHeader.appendChild(badge);
+    }
+    
+    console.log(`UI updated for role: ${role}`);
 }
 
 // --- HISTORY EVENTS ---
@@ -728,14 +765,26 @@ document.getElementById('btnRedialLast').addEventListener('click', () => {
 });
 
 /**
- * Setup supervisor tabs (UI switching only)
- * The data rendering is now handled by dashboard.js
+ * Setup supervisor dashboard with real-time updates
  */
-function setupSupervisorTabs() {
-    // We do NOT use supervisorManager.setOnActiveCallsUpdate() here anymore
-    // because dashboard.js is now responsible for updating the UI.
+function setupSupervisorDashboard() {
+    // Setup callbacks for real-time updates
+    supervisorManager.setOnActiveCallsUpdate((calls) => {
+        renderActiveCalls(calls);
+        document.getElementById('statActiveCalls').textContent = calls.length;
+    });
 
-    // Setup tab switching logic
+    supervisorManager.setOnAgentStatusUpdate((agents) => {
+        renderAgents(agents);
+        document.getElementById('statAgents').textContent = agents.length;
+    });
+
+    supervisorManager.setOnQueueStatsUpdate((queues) => {
+        renderQueues(queues);
+        document.getElementById('statQueues').textContent = queues.length;
+    });
+
+    // Setup tab switching
     document.querySelectorAll('.dashboard-tabs .tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const tab = btn.getAttribute('data-tab');
@@ -756,5 +805,189 @@ function switchTab(tabName) {
     });
 }
 
-// [NOTE] The old render functions (renderActiveCalls, renderAgents, etc.) 
-// have been removed/commented out because dashboard.js now handles the rendering.
+function renderActiveCalls(calls) {
+    const container = document.getElementById('activeCallsList');
+    if (!container) return;
+
+    if (calls.length === 0) {
+        container.innerHTML = '<div class="empty-state">No active calls</div>';
+        return;
+    }
+
+    container.innerHTML = '';
+    calls.forEach(call => {
+        const item = document.createElement('div');
+        item.className = 'supervisor-call-item';
+        
+        // Calculate duration
+        let duration = call.duration || 0;
+        if (call.startTime && !call.duration) {
+            duration = Math.floor((new Date() - new Date(call.startTime)) / 1000);
+        }
+        
+        // Determine call status - check both answered flag and state
+        const isAnswered = call.answered === true || call.state === 'Answered' || call.state === 'Up';
+        const statusClass = isAnswered ? 'answered' : 'ringing';
+        const statusText = isAnswered ? 'Answered' : 'Ringing';
+        
+        item.innerHTML = `
+            <div class="call-info">
+                <div class="call-header">
+                    <span class="call-agent"><i class="fa-solid fa-user"></i> ${call.agent || call.src || 'Unknown'}</span>
+                    <span class="call-status ${statusClass}">${statusText}</span>
+                </div>
+                <div class="call-parties">${call.callerid || call.caller || 'Unknown'} → ${call.destination || call.called || 'Unknown'}</div>
+                <div class="call-meta">Duration: ${formatDuration(duration)} • ${call.state || (isAnswered ? 'Active' : 'Connecting')}</div>
+            </div>
+            <div class="call-actions">
+                <button class="btn-icon-only monitor-btn" data-agent="${call.agent || call.src}" data-uniqueid="${call.uniqueid || ''}" title="Monitor (Listen Only)">
+                    <i class="fa-solid fa-ear-listen"></i>
+                </button>
+                <button class="btn-icon-only whisper-btn" data-agent="${call.agent || call.src}" title="Whisper (Talk to Agent)">
+                    <i class="fa-solid fa-comment-dots"></i>
+                </button>
+                <button class="btn-icon-only barge-btn" data-agent="${call.agent || call.src}" title="Barge (Join Call)">
+                    <i class="fa-solid fa-phone"></i>
+                </button>
+            </div>
+        `;
+
+        // Attach event listeners with proper error handling
+        const monitorBtn = item.querySelector('.monitor-btn');
+        const whisperBtn = item.querySelector('.whisper-btn');
+        const bargeBtn = item.querySelector('.barge-btn');
+        
+        monitorBtn.addEventListener('click', async () => {
+            monitorBtn.disabled = true;
+            monitorBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            try {
+                await supervisorManager.monitorCall(call.agent || call.src, call.uniqueid);
+                monitorBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
+                setTimeout(() => {
+                    monitorBtn.innerHTML = '<i class="fa-solid fa-ear-listen"></i>';
+                    monitorBtn.disabled = false;
+                }, 2000);
+            } catch (error) {
+                console.error("Monitor failed:", error);
+                alert("Monitor failed: " + error.message);
+                monitorBtn.innerHTML = '<i class="fa-solid fa-ear-listen"></i>';
+                monitorBtn.disabled = false;
+            }
+        });
+        
+        whisperBtn.addEventListener('click', async () => {
+            whisperBtn.disabled = true;
+            whisperBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            try {
+                await supervisorManager.whisperToCall(call.agent || call.src);
+                whisperBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
+                setTimeout(() => {
+                    whisperBtn.innerHTML = '<i class="fa-solid fa-comment-dots"></i>';
+                    whisperBtn.disabled = false;
+                }, 2000);
+            } catch (error) {
+                console.error("Whisper failed:", error);
+                alert("Whisper failed: " + error.message);
+                whisperBtn.innerHTML = '<i class="fa-solid fa-comment-dots"></i>';
+                whisperBtn.disabled = false;
+            }
+        });
+        
+        bargeBtn.addEventListener('click', async () => {
+            bargeBtn.disabled = true;
+            bargeBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            try {
+                await supervisorManager.bargeIntoCall(call.agent || call.src);
+                bargeBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
+                setTimeout(() => {
+                    bargeBtn.innerHTML = '<i class="fa-solid fa-phone"></i>';
+                    bargeBtn.disabled = false;
+                }, 2000);
+            } catch (error) {
+                console.error("Barge failed:", error);
+                alert("Barge failed: " + error.message);
+                bargeBtn.innerHTML = '<i class="fa-solid fa-phone"></i>';
+                bargeBtn.disabled = false;
+            }
+        });
+
+        container.appendChild(item);
+    });
+}
+
+function renderAgents(agents) {
+    const container = document.getElementById('agentsList');
+    if (!container) return;
+
+    if (agents.length === 0) {
+        container.innerHTML = '<div class="empty-state">No agents online</div>';
+        return;
+    }
+
+    container.innerHTML = '';
+    agents.forEach(agent => {
+        const item = document.createElement('div');
+        item.className = `supervisor-agent-item status-${agent.status}`;
+        
+        // Format status text for display
+        const statusText = agent.status ? 
+            agent.status.charAt(0).toUpperCase() + agent.status.slice(1) : 
+            'Unknown';
+        
+        // Get current call info from active calls
+        const activeCalls = supervisorManager.getActiveCalls();
+        const agentCall = activeCalls.find(call => (call.agent || call.src) === agent.extension);
+        const callInfo = agentCall ? 
+            `${agentCall.callerid || agentCall.caller || 'Unknown'} → ${agentCall.destination || agentCall.called || 'Unknown'}` : 
+            null;
+        
+        item.innerHTML = `
+            <div class="agent-info">
+                <div class="agent-header">
+                    <span class="agent-extension"><i class="fa-solid fa-user"></i> ${agent.extension}</span>
+                    <span class="agent-status-badge status-${agent.status}">${statusText}</span>
+                </div>
+                <div class="agent-meta">
+                    ${callInfo ? `<i class="fa-solid fa-phone"></i> ${callInfo}` : (agent.status === 'available' ? '<i class="fa-solid fa-check-circle"></i> Available' : '')}
+                    ${agent.callsToday ? ` • <i class="fa-solid fa-chart-line"></i> ${agent.callsToday} calls today` : ''}
+                </div>
+            </div>
+        `;
+        container.appendChild(item);
+    });
+}
+
+function renderQueues(queues) {
+    const container = document.getElementById('queuesList');
+    if (!container) return;
+
+    if (queues.length === 0) {
+        container.innerHTML = '<div class="empty-state">No queue data</div>';
+        return;
+    }
+
+    container.innerHTML = '';
+    queues.forEach(queue => {
+        const item = document.createElement('div');
+        item.className = 'supervisor-queue-item';
+        item.innerHTML = `
+            <div class="queue-info">
+                <div class="queue-header">
+                    <span class="queue-name"><i class="fa-solid fa-list"></i> ${queue.name}</span>
+                </div>
+                <div class="queue-stats">
+                    <span class="stat"><i class="fa-solid fa-clock"></i> ${queue.waiting || 0} waiting</span>
+                    <span class="stat"><i class="fa-solid fa-users"></i> ${queue.members || 0} members</span>
+                    <span class="stat"><i class="fa-solid fa-check-circle"></i> ${queue.available || 0} available</span>
+                </div>
+            </div>
+        `;
+        container.appendChild(item);
+    });
+}
+
+function formatDuration(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+}
