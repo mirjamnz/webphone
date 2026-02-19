@@ -17,22 +17,43 @@ export class AudioManager {
     // Load ringtone file based on settings
     loadRingtone() {
         const ringtoneFile = this.settings.get('ringtoneFile') || 'ringing.mp3';
+        // Try multiple path formats to ensure compatibility
         const ringtonePath = `public/sounds/${ringtoneFile}`;
         
         // Create new audio element with the selected ringtone
         this.ringAudio = new Audio(ringtonePath);
         this.ringAudio.loop = true;
+        this.ringAudio.preload = 'auto';
         this.lastRingtoneFile = ringtoneFile;
+        
+        // Log for debugging
+        console.log('Loading ringtone:', ringtonePath);
         
         // Handle loading errors gracefully
         this.ringAudio.addEventListener('error', (e) => {
             console.error('Error loading ringtone:', ringtonePath, e);
-            // Fallback to default ringtone
-            if (ringtoneFile !== 'ringing.mp3') {
-                this.ringAudio = new Audio('public/sounds/ringing.mp3');
-                this.ringAudio.loop = true;
-                this.lastRingtoneFile = 'ringing.mp3';
-            }
+            // Try alternative path format
+            const altPath = `/public/sounds/${ringtoneFile}`;
+            console.log('Trying alternative path:', altPath);
+            this.ringAudio = new Audio(altPath);
+            this.ringAudio.loop = true;
+            this.ringAudio.preload = 'auto';
+            
+            // If still fails, fallback to default ringtone
+            this.ringAudio.addEventListener('error', (e2) => {
+                console.error('Alternative path also failed, using default:', e2);
+                if (ringtoneFile !== 'ringing.mp3') {
+                    this.ringAudio = new Audio('public/sounds/ringing.mp3');
+                    this.ringAudio.loop = true;
+                    this.ringAudio.preload = 'auto';
+                    this.lastRingtoneFile = 'ringing.mp3';
+                }
+            });
+        });
+        
+        // Log successful load
+        this.ringAudio.addEventListener('loadeddata', () => {
+            console.log('Ringtone loaded successfully:', ringtonePath);
         });
     }
 
@@ -63,6 +84,11 @@ export class AudioManager {
 
     // --- Ringing ---
     startRinging() {
+        // Ensure ringtone is loaded
+        if (!this.ringAudio) {
+            this.loadRingtone();
+        }
+        
         // Reload ringtone if it was changed (check by comparing filename)
         const currentRingtone = this.settings.get('ringtoneFile') || 'ringing.mp3';
         const lastRingtone = this.lastRingtoneFile || 'ringing.mp3';
@@ -72,15 +98,35 @@ export class AudioManager {
             this.lastRingtoneFile = currentRingtone;
         }
         
+        // Ensure we have a valid audio element
+        if (!this.ringAudio) {
+            console.error('Ringtone audio element not available');
+            return;
+        }
+        
         const ringerId = this.settings.get('ringerId');
-        this.setSinkId(this.ringAudio, ringerId);
+        if (ringerId && ringerId !== 'default') {
+            this.setSinkId(this.ringAudio, ringerId);
+        }
+        
         this.ringAudio.currentTime = 0;
-        this.ringAudio.play().catch(e => console.log("Interaction needed"));
+        this.ringAudio.play().catch(e => {
+            console.error('Error playing ringtone:', e);
+            // Try to reload and play again
+            this.loadRingtone();
+            setTimeout(() => {
+                if (this.ringAudio) {
+                    this.ringAudio.play().catch(err => console.error('Retry play failed:', err));
+                }
+            }, 100);
+        });
     }
 
     stopRinging() {
-        this.ringAudio.pause();
-        this.ringAudio.currentTime = 0;
+        if (this.ringAudio) {
+            this.ringAudio.pause();
+            this.ringAudio.currentTime = 0;
+        }
     }
 
     // --- Call Waiting Tone (Beep) ---

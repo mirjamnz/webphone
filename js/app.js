@@ -130,6 +130,7 @@ const phoneCallbacks = {
 
         btnAnswer.onclick = () => {
             ui.panels.incoming.classList.add('hidden');
+            audio.stopRinging(); // Ensure ringing stops when answered
             if (!ui.panels.active.classList.contains('hidden')) {
                 line2Num = caller; 
             } else {
@@ -139,6 +140,7 @@ const phoneCallbacks = {
         };
         btnReject.onclick = () => {
             ui.panels.incoming.classList.add('hidden');
+            audio.stopRinging(); // Ensure ringing stops when rejected
             rejectCb();
         };
     },
