@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TVShop WebRTC Phone</title>
+    <title>Hero WebRTC Phone</title>
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.4/dist/jquery.min.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://unpkg.com/wavesurfer.js@7"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="css/style.css">
 </head>
@@ -14,25 +15,22 @@
 <div id="loginPage" class="login-overlay">
     <div class="login-card">
         <div class="login-logo">
-            <img src="public/images/TVShopLogo.jpeg" alt="TVShop Logo" class="brand-logo">
+            <img src="public/images/Hero-long-logo.png" alt="Hero Logo" class="brand-logo">
         </div>
-        <h2>Welcome to TVShop Phone</h2>
+        <h2>Welcome to Hero Phone</h2>
         <p>Please sign in to access your phone extension.</p>
-        
         <div class="login-form">
             <div class="input-group">
                 <label>Extension</label>
-                <input type="text" id="loginUser" placeholder="e.g. 3001">
+                <input type="text" id="loginUser" placeholder="e.g. 801...">
             </div>
             <div class="input-group">
                 <label>Password</label>
                 <input type="password" id="loginPass" placeholder="••••••••">
             </div>
-            
             <div class="advanced-toggle" id="btnToggleAdvanced">
                 <i class="fa-solid fa-sliders"></i> Server Settings
             </div>
-
             <div id="loginAdvanced" class="hidden">
                 <div class="input-group">
                     <label>Domain</label>
@@ -43,21 +41,16 @@
                     <input type="text" id="loginWss">
                 </div>
             </div>
-
-            <button id="btnDoLogin" class="btn btn-primary full-width" style="margin-top: 20px; font-size: 1rem;">
-                Sign In
-            </button>
+            <button id="btnDoLogin" class="btn btn-primary full-width" style="margin-top: 20px;">Sign In</button>
         </div>
     </div>
 </div>
 
 <div id="mainApp" class="app-container hidden">
-    
     <div class="panel sidebar">
-        
         <div class="sidebar-header">
             <div class="header-brand">
-                <img src="public/images/TVShopLogoSmall.jpeg" alt="TVShop" class="brand-logo-small">
+                <img src="public/images/Hero_logo.png" alt="Hero" class="brand-logo-small">
                 <h3>Agent Panel</h3>
             </div>
             <button class="config-btn" id="btnShowConfig" title="SIP Settings">
@@ -66,10 +59,8 @@
         </div>
         
         <div class="dial-input-group">
-            <input type="text" id="dialString" placeholder="Enter Number..." autocomplete="off">
-            <button id="btnShowHistory" class="input-action-btn" title="History / Redial">
-                <i class="fa-solid fa-clock-rotate-left"></i>
-            </button>
+            <input type="text" id="dialString" placeholder="0800..." autocomplete="off">
+            <button id="btnShowHistory" class="input-action-btn"><i class="fa-solid fa-clock-rotate-left"></i></button>
         </div>
 
         <div class="dnd-container">
@@ -81,12 +72,8 @@
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 0 5px;">
-            <div style="font-size: 0.8rem; color: var(--text-muted);">
-                <i class="fa-solid fa-users"></i> COLLEAGUES
-            </div>
-            <button id="btnBlfConfig" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.8rem;" title="Edit List">
-                <i class="fa-solid fa-pen-to-square"></i> Edit
-            </button>
+            <div style="font-size: 0.8rem; color: var(--text-muted);"><i class="fa-solid fa-users"></i> COLLEAGUES</div>
+            <button id="btnBlfConfig" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:0.8rem;">Edit</button>
         </div>
 
         <div id="blfGrid" class="blf-grid"></div>
@@ -97,172 +84,32 @@
                 <span id="statusText" style="font-size: 0.9rem; color: var(--text-muted)">Offline</span>
             </div>
             <button id="btnLogin" class="btn btn-primary" style="padding: 5px 10px; font-size: 0.8rem;">
-                <i class="fa-solid fa-power-off"></i> <span id="loginBtnText">Login</span>
+                <i class="fa-solid fa-rotate"></i> Reconnect
             </button>
         </div>
 
         <div class="dial-pad">
-            <button class="digit-btn" data-digit="1">1</button>
-            <button class="digit-btn" data-digit="2">2</button>
-            <button class="digit-btn" data-digit="3">3</button>
-            <button class="digit-btn" data-digit="4">4</button>
-            <button class="digit-btn" data-digit="5">5</button>
-            <button class="digit-btn" data-digit="6">6</button>
-            <button class="digit-btn" data-digit="7">7</button>
-            <button class="digit-btn" data-digit="8">8</button>
-            <button class="digit-btn" data-digit="9">9</button>
-            <button class="digit-btn" data-digit="*">*</button>
-            <button class="digit-btn" data-digit="0">0</button>
-            <button class="digit-btn" data-digit="#">#</button>
-        </div>
-
-        <!-- Queue Management (Supervisor/Agent) -->
-        <div id="queueSection" class="queue-section" data-role="supervisor" style="margin-bottom: 15px; display: none;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding: 0 5px;">
-                <div style="font-size: 0.8rem; color: var(--text-muted);">
-                    <i class="fa-solid fa-list"></i> QUEUES
-                </div>
-                <button id="btnQueueConfig" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.8rem;" title="Manage Queues">
-                    <i class="fa-solid fa-pen-to-square"></i> Manage
-                </button>
-            </div>
-            <div id="queueList" class="queue-list">
-                <!-- Queue items will be dynamically added here -->
-            </div>
+            <button class="digit-btn" data-digit="1">1</button><button class="digit-btn" data-digit="2">2</button><button class="digit-btn" data-digit="3">3</button>
+            <button class="digit-btn" data-digit="4">4</button><button class="digit-btn" data-digit="5">5</button><button class="digit-btn" data-digit="6">6</button>
+            <button class="digit-btn" data-digit="7">7</button><button class="digit-btn" data-digit="8">8</button><button class="digit-btn" data-digit="9">9</button>
+            <button class="digit-btn" data-digit="*">*</button><button class="digit-btn" data-digit="0">0</button><button class="digit-btn" data-digit="#">#</button>
         </div>
 
         <div class="action-grid">
-            <button id="btnCall" class="btn btn-success" style="grid-column: span 2">
-                <i class="fa-solid fa-phone"></i> Call
-            </button>
-            <button class="btn btn-warning" onclick="app.callSpecial('*45')" data-role="agent"> 
-                <i class="fa-solid fa-right-to-bracket"></i> Q-In
-            </button>
-            <button class="btn btn-danger" onclick="app.callSpecial('*46')" data-role="agent"> 
-                <i class="fa-solid fa-right-from-bracket"></i> Q-Out
-            </button>
+            <button id="btnCall" class="btn btn-success" style="grid-column: span 2"><i class="fa-solid fa-phone"></i> Call</button>
+            <button class="btn btn-warning" onclick="app.callSpecial('*45')">Q-In</button>
+            <button class="btn btn-danger" onclick="app.callSpecial('*46')">Q-Out</button>
         </div>
-
-        <div id="configModal" class="modal-overlay hidden">
-            <div class="sidebar-header" style="border:none;">
-                <h3>SIP Configuration</h3>
-                <button class="config-btn" id="btnCloseConfig"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            
-            <div class="config-scroll-area">
-                <div class="config-group">
-                    <label>Extension / Username</label>
-                    <input type="text" id="cfgUser">
-                </div>
-                <div class="config-group">
-                    <label>Password</label>
-                    <input type="password" id="cfgPass">
-                </div>
-                <div class="config-group">
-                    <label>Domain</label>
-                    <input type="text" id="cfgDomain">
-                </div>
-                <div class="config-group">
-                    <label>WSS Server URL</label>
-                    <input type="text" id="cfgWss">
-                </div>
-
-                <hr style="border-color: var(--border); margin: 15px 0;">
-
-                <div class="config-group">
-                    <label><i class="fa-solid fa-microphone"></i> Microphone</label>
-                    <select id="cfgMic" class="select-input"></select>
-                </div>
-                <div class="config-group">
-                    <label><i class="fa-solid fa-volume-high"></i> Speaker (Call Audio)</label>
-                    <select id="cfgSpeaker" class="select-input"></select>
-                </div>
-                <div class="config-group">
-                    <label><i class="fa-solid fa-bell"></i> Ringing Output</label>
-                    <select id="cfgRinging" class="select-input"></select>
-                </div>
-                <div class="config-group">
-                    <label><i class="fa-solid fa-music"></i> Ringtone</label>
-                    <select id="cfgRingtone" class="select-input">
-                        <option value="ringing.mp3">Default Ringtone</option>
-                        <option value="ringing1.mp3">Ringtone 1</option>
-                        <option value="ringing2.mp3">Ringtone 2</option>
-                        <option value="ringing3.mp3">Ringtone 3</option>
-                        <option value="ringing4.mp3">Ringtone 4</option>
-                    </select>
-                </div>
-            </div>
-
-            <button id="btnSaveConfig" class="btn btn-primary" style="margin-top: auto;">
-                Save & Reconnect
-            </button>
-        </div>
-
-        <div id="blfModal" class="modal-overlay hidden" style="justify-content: center;">
-            <div class="sidebar-header" style="border:none;">
-                <h3>Manage Colleagues</h3>
-                <button class="config-btn" id="btnCloseBlf"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">
-                Enter extension numbers separated by commas.
-            </p>
-            <div class="config-group">
-                <label>Extensions</label>
-                <input type="text" id="cfgBlfList" placeholder="e.g. 3001, 3002, 3003">
-            </div>
-            <button id="btnSaveBlf" class="btn btn-success" style="margin-top: 20px;">
-                <i class="fa-solid fa-check"></i> Save List
-            </button>
-        </div>
-
-        <div id="queueModal" class="modal-overlay hidden" style="justify-content: center;">
-            <div class="sidebar-header" style="border:none;">
-                <h3>Queue Management</h3>
-                <button class="config-btn" id="btnCloseQueue"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div id="queueConfigList" class="config-scroll-area">
-                <!-- Queue configuration items will be added here -->
-            </div>
-            <button id="btnSaveQueues" class="btn btn-success" style="margin-top: 20px;">
-                <i class="fa-solid fa-check"></i> Save Configuration
-            </button>
-        </div>
-
     </div> 
-    <div id="historyModal" class="modal-overlay hidden">
-        <div class="history-card"> 
-            <div class="history-header">
-                <h3 style="margin:0;"><i class="fa-solid fa-clock-rotate-left"></i> Recent Calls</h3>
-                <button class="config-btn" id="btnCloseHistory"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            
-            <div id="historyList" class="history-list">
-                </div>
-            
-            <button id="btnRedialLast" class="btn btn-primary full-width" style="margin-top: 15px;">
-                <i class="fa-solid fa-rotate-right"></i> <span id="redialLabel">Redial Last Number</span>
-            </button>
-        </div>
-    </div>
 
     <div class="panel main-stage">
-        <!-- Supervisor Dashboard (shown when supervisor role) -->
         <div id="supervisorDashboard" class="supervisor-dashboard hidden" data-role="supervisor">
             <div class="dashboard-header">
                 <h2><i class="fa-solid fa-chart-line"></i> Supervisor Dashboard</h2>
                 <div class="dashboard-stats">
-                    <div class="stat-card">
-                        <div class="stat-value" id="statActiveCalls">0</div>
-                        <div class="stat-label">Active Calls</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="statAgents">0</div>
-                        <div class="stat-label">Agents</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="statQueues">0</div>
-                        <div class="stat-label">Queues</div>
-                    </div>
+                    <div class="stat-card"><div class="stat-value" id="statActiveCalls">0</div><div class="stat-label">Active Calls</div></div>
+                    <div class="stat-card"><div class="stat-value" id="statAgents">0</div><div class="stat-label">Agents</div></div>
+                    <div class="stat-card"><div class="stat-value" id="statQueues">0</div><div class="stat-label">Queues</div></div>
                 </div>
             </div>
             
@@ -270,26 +117,22 @@
                 <button class="tab-btn active" data-tab="calls">Active Calls</button>
                 <button class="tab-btn" data-tab="agents">Agents</button>
                 <button class="tab-btn" data-tab="queues">Queues</button>
+                <button class="tab-btn" data-tab="recordings">Recordings</button>
             </div>
             
             <div class="dashboard-content">
-                <div id="tabCalls" class="tab-content active">
-                    <div id="activeCallsList" class="supervisor-list">
-                        <div class="empty-state">No active calls</div>
+                <div id="tabCalls" class="tab-content active"><div id="activeCallsList" class="supervisor-list"></div></div>
+                <div id="tabAgents" class="tab-content"><div id="agentsList" class="supervisor-list"></div></div>
+                <div id="tabQueues" class="tab-content"><div id="queuesList" class="supervisor-list"></div></div>
+                <div id="tabRecordings" class="tab-content">
+                    <div class="search-container" style="padding: 10px; border-bottom: 1px solid var(--border);">
+                        <div class="dial-input-group" style="margin-bottom: 0;">
+                            <input type="text" id="recSearch" placeholder="Search number or date..." style="background: rgba(0,0,0,0.2);">
+                            <button class="input-action-btn"><i class="fa-solid fa-search"></i></button>
+                        </div>
                     </div>
+                    <div id="recordingsList" class="supervisor-list"></div>
                 </div>
-                <div id="tabAgents" class="tab-content">
-                    <div id="agentsList" class="supervisor-list">
-                        <div class="empty-state">No agents online</div>
-                    </div>
-                </div>
-                <div id="tabQueues" class="tab-content">
-                    <div id="queuesList" class="supervisor-list">
-                        <div class="empty-state">No queue data</div>
-                    </div>
-                </div>
-            </div>
-        </div>
 
         <div id="idleState" class="call-info">
             <i class="fa-solid fa-phone-volume" style="font-size: 4rem; color: var(--border); margin-bottom: 20px;"></i>
@@ -297,21 +140,14 @@
         </div>
 
         <div id="activeState" class="call-info hidden">
-            <div class="avatar-circle">
-                <i class="fa-solid fa-user"></i>
-            </div>
+            <div class="avatar-circle"><i class="fa-solid fa-user"></i></div>
             <h2 id="remoteIdentity">Unknown</h2>
             <div id="callTimer" class="timer">00:00</div>
-            <div style="margin-top: 10px; color: var(--success); font-size: 0.9rem;">
-                <i class="fa-solid fa-shield-halved"></i> Audio Only (Opus/Alaw)
-            </div>
         </div>
 
         <div id="incomingModal" class="incoming-overlay hidden">
             <div class="incoming-box">
-                <div class="avatar-circle pulsing">
-                    <i class="fa-solid fa-phone"></i>
-                </div>
+                <div class="avatar-circle pulsing"><i class="fa-solid fa-phone"></i></div>
                 <h3>Incoming Call</h3>
                 <p id="incomingIdentity">Unknown</p>
                 <div class="incoming-actions">
@@ -324,48 +160,63 @@
         <audio id="remoteAudio" autoplay></audio>
 
         <div id="controlsBar" class="controls-bar">
-            <button id="btnTransfer" class="ctrl-btn" title="Blind Transfer">
-                <i class="fa-solid fa-share-from-square"></i>
-            </button>
-            <button id="btnConsult" class="ctrl-btn" title="Consult / Warm Transfer">
-                <i class="fa-solid fa-users-gear"></i>
-            </button>
-            <button id="btnMute" class="ctrl-btn mute" title="Mute">
-                <i class="fa-solid fa-microphone-slash"></i>
-            </button>
-            <button id="btnHangup" class="ctrl-btn hangup" title="End Call">
-                <i class="fa-solid fa-phone-slash"></i>
-            </button>
-            <button id="btnHold" class="ctrl-btn hold" title="Hold">
-                <i class="fa-solid fa-pause"></i>
-            </button>
-        </div>
-
-        <div id="consultControls" class="glass-panel hidden">
-            <div class="line-tabs">
-                <button id="btnLine1" class="tab-btn held-line">
-                    <i class="fa-solid fa-user"></i> <span>Customer (Held)</span>
-                </button>
-                <button id="btnLine2" class="tab-btn active-line">
-                    <i class="fa-solid fa-user-doctor"></i> <span>Colleague (Active)</span>
-                </button>
-            </div>
-            <div class="action-row">
-                <button id="btnMerge" class="btn btn-warning" style="color: black;">
-                    <i class="fa-solid fa-users-line"></i> Merge
-                </button>
-                <button id="btnCompleteTransfer" class="btn btn-primary">
-                    <i class="fa-solid fa-check"></i> Transfer
-                </button>
-            </div>
-            <button id="btnCancelConsult" class="btn btn-danger full-width">
-                <i class="fa-solid fa-xmark"></i> End Consultation (Return to Caller)
-            </button>
+            <button id="btnMute" class="ctrl-btn mute"><i class="fa-solid fa-microphone-slash"></i></button>
+            <button id="btnHangup" class="ctrl-btn hangup"><i class="fa-solid fa-phone-slash"></i></button>
+            <button id="btnHold" class="ctrl-btn hold"><i class="fa-solid fa-pause"></i></button>
         </div>
     </div>
 
+    <div id="configModal" class="modal-overlay hidden">
+        <div class="sidebar-header"><h3>SIP Configuration</h3><button class="config-btn" id="btnCloseConfig"><i class="fa-solid fa-xmark"></i></button></div>
+        <div class="config-scroll-area">
+            <div class="config-group"><label>Extension</label><input type="text" id="cfgUser"></div>
+            <div class="config-group"><label>Password</label><input type="password" id="cfgPass"></div>
+            <div class="config-group"><label>Microphone</label><select id="cfgMic" class="select-input"></select></div>
+            <div class="config-group"><label>Speaker</label><select id="cfgSpeaker" class="select-input"></select></div>
+            <div class="config-group"><label>Ringer</label><select id="cfgRinging" class="select-input"></select></div>
+        </div>
+        <button id="btnSaveConfig" class="btn btn-primary">Save & Reconnect</button>
+    </div>
+
+    <div id="historyModal" class="modal-overlay hidden">
+        <div class="history-card">
+            <div class="history-header"><h3>Recent Calls</h3><button class="config-btn" id="btnCloseHistory"><i class="fa-solid fa-xmark"></i></button></div>
+            <div id="historyList" class="history-list"></div>
+        </div>
+    </div>
 </div>
 
+<script src="https://unpkg.com/wavesurfer.js@7"></script>
+
+<div id="audioModal" class="modal-overlay hidden" style="z-index: 9999; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; align-items: center; justify-content: center;">
+    <div class="modal-content" style="background: #1a1d21; padding: 30px; border: 1px solid #343a40; width: 450px; border-radius: 20px; position: relative; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.6); margin: 10% auto;">
+        <span class="close-modal" id="btnCloseAudioModal" style="position: absolute; top: 15px; right: 25px; color: #adb5bd; font-size: 32px; font-weight: bold; cursor: pointer;">&times;</span>
+        
+        <div style="margin-bottom: 25px;">
+            <h3 id="modalTitle" style="color: white; margin: 0; font-size: 1.2rem;">Call Recording</h3>
+            <p id="modalSubtitle" style="color: #6c757d; font-size: 0.9rem; margin-top: 8px; font-family: monospace;"></p>
+        </div>
+
+        <div id="waveform" style="width: 100%; margin: 25px 0; background: rgba(255,255,255,0.03); border-radius: 8px; padding: 10px;"></div>
+
+        <div class="player-controls" style="display: flex; justify-content: center; margin-bottom: 15px;">
+            <button id="btnPlayPause" class="btn-play-circle" style="width: 50px; height: 50px; font-size: 1.2rem;">
+                <i class="fa-solid fa-play"></i>
+            </button>
+        </div>
+        
+        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #2d3238;">
+            <a id="downloadBtn" href="#" download class="btn btn-primary" style="font-size: 0.8rem; text-decoration: none; display: inline-block;">
+                <i class="fa-solid fa-download"></i> Download MP3
+            </a>
+        </div>
+    </div>
+</div>
+
+</div>
+</div>
+
+<script src="https://unpkg.com/wavesurfer.js@7"></script>
 <script type="module" src="js/app.js"></script>
 
 </body>

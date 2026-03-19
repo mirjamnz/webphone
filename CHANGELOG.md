@@ -1,128 +1,31 @@
 # Changelog
 
-All notable changes to the WebRTC Call Center project will be documented in this file.
-
-## [Unreleased]
-### Planned
-- Enhanced call history filtering and search
-- Export call history to CSV/Excel
-- Real-time supervisor dashboard
-- Agent performance metrics
-- Advanced queue statistics
-
-## [2.0.0] - 2026-02-12
+## [2.2.0] - 2026-03-19
 ### Added
-- **Role-Based System:** Complete user role management (agent/supervisor/admin) with permission-based feature access
-- **User Profile Module:** User profile management with role detection and preferences storage (`user.js`)
-- **Queue Management:** Full queue login/logout functionality with visual status indicators (`queue.js`)
-- **Recordings Access:** Call recordings module for listing, playing, and downloading recordings (`recordings.js`)
-- **Supervisor Features:** Supervisor monitoring module with monitor, whisper, and barge capabilities (`supervisor.js`)
-- **Enhanced UI:**
-  - Role-based UI rendering (shows/hides features based on permissions)
-  - Professional queue management interface
-  - Improved animations and loading states
-  - Responsive design improvements for mobile devices
-  - Role badges in sidebar header
-- **Call History Enhancements:**
-  - Recording playback buttons in history list
-  - Unique ID tracking for recordings lookup
-  - Enhanced history item actions
-- **Modular Architecture:**
-  - New modules: `user.js`, `queue.js`, `recordings.js`, `supervisor.js`
-  - Clean separation of concerns
-  - Easy to extend and maintain
+- **Visual Waveforms:** Integrated `WaveSurfer.js` to replace the standard HTML5 audio player with a dynamic visual waveform for call recordings.
+- **Searchable Archive:** Implemented a real-time search bar in the Recordings tab to filter call logs by caller or callee number.
+- **Enhanced Modal Player:** Replaced the floating browser player with a centered, high-fidelity modal featuring play/pause toggles and blur-background effects.
 
-### Changed
-- **Code Organization:** Improved modular structure with clear documentation
-- **UI Layout:** Enhanced sidebar with queue management section for supervisors
-- **History Display:** Added recording access directly from call history
-- **Role Detection:** Automatic role assignment based on extension number (configurable via localStorage)
+### Fixed
+- **Nginx Priority Routing:** Resolved 404 errors by adding `^~` priority modifiers to the Nginx configuration, ensuring `/api/recordings` correctly hits the Node.js bridge instead of PostgREST.
+- **Modal Visibility:** Fixed a CSS conflict where the `.hidden` utility class was preventing the audio modal from displaying even when triggered.
+- **Audio Cleanup:** Added logic to automatically pause and destroy the audio stream when the recording modal is closed to prevent overlapping playback.
 
 ### Technical
-- All new modules follow consistent documentation standards
-- Error handling improved across all modules
-- API integration prepared for backend endpoints
-- Maintained backward compatibility with existing features
-
-## [1.0.0] - 2026-02-11
+- Migrated recording data source from PostgREST (Port 3000) to Node.js Bridge (Port 3002) for better permission handling and schema caching.
+- Optimized WaveSurfer initialization with a timeout to ensure reliable DOM attachment during dashboard boot.
+## [2.1.0] - 2026-03-19
 ### Added
-- **Modular Architecture:** Split monolithic HTML into `app.js`, `phone.js`, `audio.js`, `settings.js`.
-- **Persistent Settings:** User credentials, WSS server, and Audio Device selections are now saved in LocalStorage.
-- **Audio Manager:** Dedicated class to handle Ringing (MP3), Microphone selection, and Speaker output routing.
-- **Call Control:**
-  - Outbound Calling with specific microphone constraints.
-  - Incoming Call popup with Accept/Reject logic.
-  - Hangup (Red Button).
-  - Hold/Resume (SIP Re-Invite with `sendonly`/`sendrecv`).
-  - DTMF Tone generation (RTP/RFC4733 support).
-- **UI Improvements:**
-  - "Dark Mode" dashboard design.
-  - Dynamic "Active Call" vs "Idle" states.
-  - Visual Feedback for Mute, Hold, and Connection Status.
-  - Timer for active calls.
-- **Blind Transfer:** Added UI button and SIP REFER logic to transfer calls immediately to another extension.
-- **Warm Transfer UX:** Integrated 'Consult' mode into the main Dial Pad.
-- **Line Manager:** UI to toggle between Original Caller (Line 1) and Colleague (Line 2).
-- **Consultation Logic:** Automated Hold/Unhold when swapping lines.
-### Added
-- **3-Way Conferencing:** Added 'Merge' capability to bridge Line 1 and Line 2 into a single conference call.
-- **Client-Side Audio Mixing:** Implemented Web Audio API bridging to mix audio streams locally. This allows the Agent to bridge two callers together without requiring a server-side conference room.
-- **Dynamic Line Labels:** Line Manager buttons now display the specific phone numbers/extensions connected (e.g., "+6421..." instead of just "Line 1").
-- **Contextual UI:** Standard control buttons (Transfer/Consult) now hide automatically when the Line 
+- **Hero Branding:** Rebranded UI from TVShop to Hero Internet including new logos and color schemes.
+- **Recordings Dashboard:** Added a dedicated "Recordings" tab to the Supervisor Dashboard fetching from Postgres `call_logs`.
+- **Backend Recordings API:** Implemented `/api/recordings` endpoint in `server.js` to serve historical call data with recording links.
+- **Permission Safety:** Added explicit `getUserMedia` checks before outgoing calls to prevent browser-level permission denials.
 
 ### Fixed
-- Fixed audio routing issue where held calls remained in `recvonly` mode during a merge.
-- Fixed UI duplication bug in the Line Manager panel.
+- **Registration Logic:** Normalized SIP status strings to correctly display "Connected" status in the UI regardless of server case-sensitivity.
+- **Device Population:** Restored the ability to select specific Microphone and Speaker hardware in the configuration modal.
+- **Layout Integrity:** Fixed broken HTML tags causing UI chaos in the sidebar and dashboard.
 
-### Fixed
-- Fixed critical bug where "Incoming" modal blocked the "Active Call" controls.
-- Fixed CSS issue where Hangup button was not Red.
-- Fixed DTMF issue by implementing direct RTP insertion instead of just SIP INFO.
-- Fixed Hold failure by adding safety checks for call stability.
-
-## [1.3.0] - 2026-02-11
-
-### Added
-- **Busy Lamp Field (BLF):** Real-time monitoring of colleague status (Available/Ringing/Busy) using SIP `dialog-info` (RFC 4235).
-- **Do Not Disturb (DND):** Toggle switch to reject incoming calls immediately with "486 Busy Here".
-- **Call Waiting:** Visual and audible notification for incoming calls while busy.
-- **Call Waiting Tone:** Implemented non-intrusive digital beep using Web Audio API (440Hz oscillator) to alert agents without interrupting the audio stream.
-- **Audio Bridge:** Implemented client-side audio mixing (Track Grafting) to enable 3-Way Conferencing without server-side bridges.
-- **Colleague Management UI:** Added a dedicated modal for managing Monitored Extensions (BLF), separate from the technical SIP configuration.
-- **Edit Button:** Added an "Edit" button directly to the Colleagues header for quick access.
-### Added
-- **Login Splash Screen:** Implemented a professional "Welcome" overlay that hides the main interface until authentication is complete.
-- **Auto-Login:** The app now remembers credentials and bypasses the splash screen on reload if a valid session exists.
-- **Advanced Settings Toggle:** Moved technical settings (Domain/WSS) into a collapsible "Advanced" section on the login screen to simplify the initial user experience.
-## [1.4.0] - 2026-02-12
-- **Call History:** New module (`history.js`) that fetches and displays recent calls from the Postgres CDR database.
-- **Redial Feature:**
-  - **Quick Redial:** "Redial Last Number" button updates dynamically with the last dialed number.
-  - **List Redial:** Specific "Call Again" buttons for every record in the history list.
-- **API Integration:** Implemented PostgREST-compatible filtering (`?or=(src.eq.x,dst.eq.x)`) to correctly retrieve inbound and outbound calls for the specific agent.
-
-### Changed
-- **UI Layout:**
-  - Integrated the History button directly into the Dial Pad input group for a cleaner, modern look.
-  - Redesigned the History Modal to be a responsive "card" overlay instead of a full-screen popup.
-  - Restored the Sidebar Panel wrapper in `index.html` to fix grid layout issues.
-
-### Changed
-- **Initialization Logic:** Refactored startup sequence to check for stored credentials before attempting to connect to the SIP server.
-- **Configuration UX:** Moved the "Monitored Extensions" input out of the main SIP Settings modal to prevent accidental technical changes.
-- **State Management:** Settings modals now correctly re-populate with saved values every time they are opened, fixing an issue where fields appeared empty.
-
-### Fixed
-- **UI:** Resolved duplicate "Agent Panel" headers and DND toggles in the sidebar.
-- **Context Logic:** Fixed context scope issues for BLF subscriptions (hints moved to shared context).
-### Fixed
-- **BLF Presence Logic:** Switched SIP subscription mode from `dialog` to `presence` (PIDF+XML). This correctly distinguishes between 'Offline' (Gray) and 'Available' (Green), fixing the issue where unregistered extensions appeared as Available.
-- **Dialplan Hints:** Updated Asterisk dialplan to place hints in a shared context (`[blf_hints]`) ensuring both internal agents and external trunks can subscribe to status updates properly.
-
-## [1.3.1] - 2026-02-12
-### Fixed
-- **Database Connectivity:** Resolved `invalid input syntax for type uuid` error in Asterisk CDRs. Replaced configuration placeholder with valid Tenant UUID in `extensions.conf`.
-- **Connection Stability:** Fixed NAT timeouts where the client would disconnect silently after ~60 seconds. Implemented a SIP Keep-Alive mechanism that pings the server every 30 seconds.
-- **Configuration:** Updated `config.js` to include `KEEP_ALIVE_INTERVAL` and prepared `CDR_API_URL` for upcoming history features.
-- **API Security (CORS):** Resolved "Connection Failed" errors by updating Nginx to strip restrictive upstream headers and enforce permissive CORS rules for the `/api/` endpoint.
-- **Data Parsing:** Added logic to handle both array and object-wrapped (`{ data: [...] }`) JSON responses from the API.
+### Technical
+- Optimized `app.js` and `server.js` for modularity, reducing line counts while increasing functionality.
+- Implemented automatic URL decoding for Hero recording links to ensure one-click playback from the dashboard.

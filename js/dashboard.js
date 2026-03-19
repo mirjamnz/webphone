@@ -1,17 +1,14 @@
-/**
- * js/dashboard.js
- * Handles real-time polling from the API and renders the Supervisor Dashboard.
- */
-
 export class DashboardManager {
     constructor(settings) {
         this.settings = settings;
         this.apiUrl = 'https://bdl-pbx.itnetworld.co.nz/api/live-status';
-        this.pollInterval = null;
-        this.isPolling = false;
-        this.directory = {}; // Stores names synced from Hero XML via the backend
+        this.recUrl = 'https://bdl-pbx.itnetworld.co.nz/api/recordings';
         
-        // UI References
+        this.pollInterval = null;
+        this.directory = {};
+        this.allRecordings = [];
+        this.wavesurfer = null;
+
         this.ui = {
             stats: {
                 active: document.getElementById('statActiveCalls'),
@@ -21,188 +18,177 @@ export class DashboardManager {
             lists: {
                 calls: document.getElementById('activeCallsList'),
                 agents: document.getElementById('agentsList'),
-                queues: document.getElementById('queuesList')
+                queues: document.getElementById('queuesList'),
+                recordings: document.getElementById('recordingsList')
             }
         };
+
+        this.initWaveSurfer();
+        this.initModalListeners();
+    }
+
+    initWaveSurfer() {
+        // We use setTimeout to ensure the #waveform element is ready in the DOM
+        setTimeout(() => {
+            const container = document.querySelector('#waveform');
+            if (!container) return;
+
+            this.wavesurfer = WaveSurfer.create({
+                container: '#waveform',
+                waveColor: '#3498db',
+                progressColor: '#2980b9',
+                cursorColor: '#fff',
+                barWidth: 2,
+                barRadius: 3,
+                responsive: true,
+                height: 80,
+                normalize: true
+            });
+
+            const playBtn = document.getElementById('btnPlayPause');
+            if (playBtn) {
+                this.wavesurfer.on('play', () => { playBtn.innerHTML = '<i class="fa-solid fa-pause"></i>'; });
+                this.wavesurfer.on('pause', () => { playBtn.innerHTML = '<i class="fa-solid fa-play"></i>'; });
+                playBtn.onclick = () => this.wavesurfer.playPause();
+            }
+        }, 100);
+    }
+
+    initModalListeners() {
+        const modal = document.getElementById('audioModal');
+        document.addEventListener('click', (e) => {
+            if (e.target.id === 'btnCloseAudioModal' || e.target === modal) {
+                modal.classList.add('hidden');
+                modal.style.display = 'none';
+                if (this.wavesurfer) this.wavesurfer.stop();
+            }
+        });
     }
 
     start() {
-        if (this.isPolling) return;
-        console.log("Dashboard: Starting API polling...");
-        this.isPolling = true;
         this.fetchData();
-        this.pollInterval = setInterval(() => this.fetchData(), 2000);
-    }
-
-    stop() {
-        console.log("Dashboard: Stopping polling.");
-        this.isPolling = false;
-        if (this.pollInterval) clearInterval(this.pollInterval);
+        this.pollInterval = setInterval(() => this.fetchData(), 3000);
     }
 
     async fetchData() {
-        if (!this.isPolling) return;
         try {
-            const response = await fetch(this.apiUrl);
-            if (!response.ok) throw new Error(`API Error: ${response.status}`);
-            const data = await response.json();
+            const [statusRes, recRes] = await Promise.all([
+                fetch(this.apiUrl).then(r => r.json()),
+                fetch(this.recUrl).then(r => r.json())
+            ]);
+
+            this.directory = statusRes.directory || {};
+            this.allRecordings = recRes || [];
             
-            // Update local directory with Hero XML data sent by server.js
-            if (data.directory) {
-                this.directory = data.directory;
-            }
-            
-            this.render(data);
-        } catch (error) {
-            console.error("Dashboard: Fetch failed", error);
-        }
+            this.render(statusRes);
+            this.renderRecordings(this.allRecordings);
+        } catch (e) { console.error("Dashboard Sync Error:", e); }
     }
 
     render(data) {
-        if (!data || !data.calls) return;
+        const calls = data.calls || [];
+        const active = calls.filter(c => c.status === 'answered');
+        const queuedCalls = calls.filter(c => c.status === 'ringing');
+        const agents = Object.entries(this.directory).filter(([num, d]) => d.type === 'agent');
+        const queuesDir = Object.entries(this.directory).filter(([num, d]) => d.type === 'queue');
 
-        const activeCalls = data.calls.filter(c => c.status === 'answered');
-        const queuedCalls = data.calls.filter(c => c.status === 'ringing');
-
-        const agentsOnCall = new Set();
-        activeCalls.forEach(c => {
-            if (this.isAgent(c.caller_number)) agentsOnCall.add(c.caller_number);
-            if (this.isAgent(c.callee_number)) agentsOnCall.add(c.callee_number);
-        });
-
-        if (this.ui.stats.active) this.ui.stats.active.innerText = activeCalls.length;
+        if (this.ui.stats.active) this.ui.stats.active.innerText = active.length;
         if (this.ui.stats.queues) this.ui.stats.queues.innerText = queuedCalls.length;
-        if (this.ui.stats.agents) this.ui.stats.agents.innerText = agentsOnCall.size;
+        if (this.ui.stats.agents) this.ui.stats.agents.innerText = agents.length;
 
-        this.renderCallsList(activeCalls);
-        this.renderQueuesList(queuedCalls);
-        this.renderAgentsList(activeCalls);
+        this.renderCallsList(active);
+        this.renderAgentsList(agents);
+        this.renderQueuesList(queuesDir, queuedCalls);
     }
 
     renderCallsList(calls) {
         const container = this.ui.lists.calls;
         if (!container) return;
-        if (calls.length === 0) {
-            container.innerHTML = '<div class="empty-state">No active calls</div>';
-            return;
-        }
-
-        container.innerHTML = calls.map(call => {
-            const duration = this.calculateDuration(call.connect_time || call.start_time);
-            const { agent, customer, directionIcon } = this.parseCallParties(call);
-
-            return `
+        container.innerHTML = calls.length ? calls.map(c => `
             <div class="supervisor-call-item">
                 <div class="call-info">
-                    <div class="call-header">
-                        <span class="call-agent"><i class="${directionIcon}"></i> ${agent}</span>
-                        <span class="call-status answered">Active</span>
-                    </div>
-                    <div class="call-parties">Speaking with <strong>${customer}</strong></div>
-                    <div class="call-meta"><i class="fa-regular fa-clock"></i> ${duration}</div>
+                    <div class="call-header"><span class="call-agent">Ext: ${c.callee_number}</span><span class="call-status answered">Active</span></div>
+                    <div class="call-parties">${c.caller_number} → ${c.callee_number}</div>
                 </div>
-            </div>`;
-        }).join('');
+            </div>`).join('') : '<div class="empty-state">No active calls</div>';
     }
 
-    renderQueuesList(calls) {
-        const container = this.ui.lists.queues;
-        if (!container) return;
-        if (calls.length === 0) {
-            container.innerHTML = '<div class="empty-state">No queued calls</div>';
-            return;
-        }
-
-        container.innerHTML = calls.map(call => {
-            const duration = this.calculateDuration(call.start_time);
-            const queueName = this.formatName(call.callee_number);
-            const customer = this.formatName(call.caller_number);
-
-            return `
-            <div class="supervisor-queue-item" style="border-left: 3px solid var(--warning);">
-                <div class="queue-info">
-                    <div class="queue-header"><span class="queue-name"><i class="fa-solid fa-list-ol"></i> ${queueName}</span></div>
-                    <div class="queue-stats">
-                        <span class="stat" style="color: var(--danger); font-weight:bold;"><i class="fa-solid fa-stopwatch"></i> Waiting: ${duration}</span>
-                        <span class="stat">Caller: ${customer}</span>
-                    </div>
-                </div>
-            </div>`;
-        }).join('');
-    }
-
-    renderAgentsList(calls) {
+    renderAgentsList(agents) {
         const container = this.ui.lists.agents;
         if (!container) return;
-        
-        const agentCalls = calls.filter(c => this.isAgent(c.caller_number) || this.isAgent(c.callee_number));
-        if (agentCalls.length === 0) {
-            container.innerHTML = '<div class="empty-state">No agents currently active</div>';
-            return;
-        }
+        container.innerHTML = agents.map(([number, data]) => `
+            <div class="supervisor-agent-item">
+                <div class="agent-info"><span class="agent-extension">${data.name || 'Agent'}</span><div class="agent-meta">Ext: ${number}</div></div>
+            </div>`).join('');
+    }
 
-        container.innerHTML = agentCalls.map(call => {
-            const { agent, customer } = this.parseCallParties(call);
-            const duration = this.calculateDuration(call.connect_time || call.start_time);
-
-            return `
-            <div class="supervisor-agent-item status-busy">
-                <div class="agent-info">
-                    <div class="agent-header">
-                        <span class="agent-extension"><i class="fa-solid fa-headset"></i> ${agent}</span>
-                        <span class="agent-status-badge status-busy">On Call</span>
-                    </div>
-                    <div class="agent-meta"><i class="fa-solid fa-phone"></i> ${customer} &bull; ${duration}</div>
-                </div>
-            </div>`;
+    renderQueuesList(queues, queuedCalls) {
+        const container = this.ui.lists.queues;
+        if (!container) return;
+        container.innerHTML = queues.map(([number, data]) => {
+            const waitingCount = queuedCalls.filter(c => c.callee_number === number).length;
+            return `<div class="supervisor-queue-item"><div class="queue-info"><span class="queue-name">${data.name || 'Queue'}</span><span class="call-status ${waitingCount > 0 ? 'ringing' : 'answered'}">${waitingCount} Waiting</span></div></div>`;
         }).join('');
     }
 
-    parseCallParties(call) {
-        let agent, customer, directionIcon;
-        if (this.isAgent(call.caller_number)) {
-            agent = this.formatName(call.caller_number);
-            customer = this.formatName(call.callee_number);
-            directionIcon = "fa-solid fa-arrow-right-from-bracket";
-        } else {
-            agent = this.formatName(call.callee_number);
-            customer = this.formatName(call.caller_number);
-            directionIcon = "fa-solid fa-arrow-right-to-bracket";
+    renderRecordings(recs) {
+        const container = this.ui.lists.recordings;
+        const searchInput = document.getElementById('recSearch');
+        if (!container) return;
+
+        const filter = searchInput ? searchInput.value.toLowerCase() : "";
+        const filtered = recs.filter(r => (r.caller_number.includes(filter) || r.callee_number.includes(filter)) && r.recording_url);
+
+        if (filtered.length === 0) { 
+            container.innerHTML = `<div class="empty-state">${filter ? 'No matching numbers' : 'No recordings found'}</div>`; 
+            return; 
         }
-        return { agent, customer, directionIcon };
-    }
-
-    isAgent(number) {
-        if (!number) return false;
-        if (this.directory[number] && this.directory[number].type === 'agent') return true;
-        return /^\d{4}$/.test(number.toString()); 
-    }
-
-    formatName(rawNumber) {
-        if (!rawNumber) return "Unknown";
-        if (this.directory[rawNumber]) return this.directory[rawNumber].name;
         
-        let clean = rawNumber.toString();
-        if (clean.startsWith('64')) clean = '0' + clean.substring(2);
-        if (this.directory[clean]) return this.directory[clean].name;
-        
-        return this.formatNumber(rawNumber);
-    }
+        container.innerHTML = filtered.slice(0, 50).map(r => {
+            const dateStr = new Date(r.ended_at).toLocaleString();
+            const title = `${r.caller_number} → ${r.callee_number}`;
+            const url = decodeURIComponent(r.recording_url);
+            
+            return `
+            <div class="recording-item" style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid rgba(255,255,255,0.05);">
+                <div class="recording-info">
+                    <div style="font-weight:600; color:white;">${title}</div>
+                    <div style="font-size:0.75rem; color:var(--text-muted);">${dateStr} | ${r.duration}s</div>
+                </div>
+                <button class="btn-play-circle" onclick="window.openDashboardAudio('${url}', '${title}', '${dateStr}')">
+                    <i class="fa-solid fa-play"></i>
+                </button>
+            </div>`;
+        }).join('');
 
-    formatNumber(num) {
-        if (!num) return "";
-        let clean = num.toString();
-        if (clean.startsWith('64')) clean = '0' + clean.substring(2);
-        return clean;
-    }
-
-    calculateDuration(startTimeStr) {
-        if (!startTimeStr) return "00:00";
-        const start = new Date(startTimeStr).getTime();
-        const seconds = Math.floor((Date.now() - start) / 1000);
-        if (seconds < 0) return "00:00";
-        const m = Math.floor(seconds / 60);
-        const s = seconds % 60;
-        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        if (searchInput && !searchInput.dataset.listener) {
+            searchInput.dataset.listener = "true";
+            searchInput.oninput = () => this.renderRecordings(this.allRecordings);
+        }
     }
 }
+
+window.openDashboardAudio = function(url, title, date) {
+    const modal = document.getElementById('audioModal');
+    const download = document.getElementById('downloadBtn');
+    
+    // This sends the request to your server, which then gets it from Hero for you
+    const proxiedUrl = `https://bdl-pbx.itnetworld.co.nz/api/proxy-audio?url=${encodeURIComponent(url)}`;
+    
+    document.getElementById('modalTitle').innerText = title;
+    document.getElementById('modalSubtitle').innerText = date;
+    
+    if (download) download.href = proxiedUrl;
+    
+    // Show modal
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex'; 
+
+    if (window.app && window.app.dashboard && window.app.dashboard.wavesurfer) {
+        // Load the proxied URL to bypass the CORS "Failed to fetch" error
+        window.app.dashboard.wavesurfer.load(proxiedUrl);
+        window.app.dashboard.wavesurfer.once('ready', () => {
+            window.app.dashboard.wavesurfer.play();
+        });
+    }
+};

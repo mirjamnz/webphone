@@ -1162,3 +1162,40 @@ input:checked + .slider:before {
     color: var(--text-muted);
     font-size: 0.9rem;
 }
+
+.modal {
+    display: none; 
+    transition: opacity 0.3s ease;
+}
+
+.modal-content {
+    animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+    from { transform: translateY(-10%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.close-modal:hover {
+    color: var(--danger) !important;
+}
+
+.btn-play-circle {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: none;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s;
+}
+
+.btn-play-circle:hover {
+    transform: scale(1.1);
+    background: #2980b9;
+}
