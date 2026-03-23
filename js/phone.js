@@ -1,36 +1,106 @@
 /**
  * js/phone.js
  * Simplified SIP/WebRTC Engine with RFC 5626 (Outbound), ICE Fixes, and Heartbeat Watchdog
- * Last modified: 2026-03-24 — Kamailio REGISTER 200 Contact sanitization for SIP.js parser; register: false.
+ * Last modified: 2026-03-24 — REGISTER 200 Contact: pick binding by +sip.instance / max-expires; register: false.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
 /**
+ * Parse each <sip:…> binding in a Contact header value (comma-separated list).
+ * @param {string} contactValue
+ * @returns {{ userHost: string, expires: number, inner: string }[]}
+ */
+function parseSipContactBindings(contactValue) {
+    const bindings = [];
+    let i = 0;
+    while (i < contactValue.length) {
+        const lt = contactValue.indexOf('<sip:', i);
+        if (lt === -1) break;
+        const gt = contactValue.indexOf('>', lt);
+        if (gt === -1) break;
+        // Bytes after "<sip:" up to ">" are the URI (user@host;params) without the "sip:" prefix.
+        const inner = contactValue.slice(lt + 5, gt);
+        const userHost = inner.split(';')[0].trim();
+        const afterGt = contactValue.slice(gt + 1);
+        let expMatch = afterGt.match(/^\s*;\s*expires\s*=\s*(\d+)/i);
+        let expires = expMatch ? parseInt(expMatch[1], 10) : 0;
+        if (!expires) {
+            const inUri = inner.match(/;expires=(\d+)/i);
+            if (inUri) expires = parseInt(inUri[1], 10);
+        }
+        if (userHost.includes('@')) {
+            bindings.push({ userHost, expires, inner });
+        }
+        i = gt + 1;
+    }
+    return bindings;
+}
+
+/**
+ * Pick the binding for *this* UA. Kamailio lists old + new contacts; first URI is often stale (wrong host).
+ * SIP.js Registerer rejects 200 if Contact does not "point to us" (onAccept → "No Contact header pointing to us").
+ * @param {{ userHost: string, expires: number, inner: string }[]} bindings
+ * @param {string} contactUserName - anonymous Contact user (e.g. rs2g5mcz)
+ * @param {string} instanceUuid - persistent +sip.instance uuid without urn prefix
+ */
+function pickRegisterContactBinding(bindings, contactUserName, instanceUuid) {
+    if (!bindings.length) return null;
+    if (instanceUuid) {
+        const needle = instanceUuid.toLowerCase().replace(/-/g, '');
+        const withInst = bindings.filter((b) => {
+            const compact = b.inner.toLowerCase().replace(/-/g, '');
+            return compact.includes(needle) || b.inner.includes(instanceUuid);
+        });
+        if (withInst.length === 1) return withInst[0];
+        if (withInst.length > 1) {
+            return withInst.reduce((a, b) => (b.expires > a.expires ? b : a));
+        }
+    }
+    if (contactUserName) {
+        const prefix = `${contactUserName}@`;
+        const same = bindings.filter((b) => b.userHost.startsWith(prefix));
+        if (same.length) {
+            return same.reduce((a, b) => (b.expires > a.expires ? b : a));
+        }
+    }
+    return bindings.reduce((a, b) => (b.expires > a.expires ? b : a));
+}
+
+/**
  * Kamailio 5.6 REGISTER 2xx can include multiple bindings, alias=, and received="sip:..." on Contact.
- * SIP.js 0.21 drops the entire message ("error parsing header 'Contact'"), so Registerer never sees 200 → 408.
- * Use case: Hero WSS registration + dashboard agent presence (needs stable Registered state).
+ * SIP.js 0.21 may drop the raw header; if we simplify, we must keep *our* binding (instance / freshest), not the first.
  * @param {string} raw
+ * @param {string} contactUserName
+ * @param {string} instanceUuid
  * @returns {string}
  */
-function sanitizeKamailioRegister2xxContact(raw) {
+function sanitizeKamailioRegister2xxContact(raw, contactUserName, instanceUuid) {
     if (typeof raw !== 'string' || raw.length < 12) return raw;
     if (!raw.startsWith('SIP/2.0')) return raw;
     const statusLine = raw.split(/\r?\n/, 1)[0];
     if (!/^SIP\/2\.0\s+2\d\d/.test(statusLine)) return raw;
     const cseq = raw.match(/^CSeq:\s*\d+\s+(\S+)/im);
     if (!cseq || String(cseq[1]).toUpperCase() !== 'REGISTER') return raw;
-    if (!/^Contact:/im.test(raw)) return raw;
 
-    const angle = raw.match(/<sip:([^>]+)>/i);
-    if (!angle) return raw;
-    const inBrackets = angle[1];
-    const afterScheme = inBrackets.replace(/^sip:/i, '');
-    const userHost = afterScheme.split(';')[0].trim();
-    if (!userHost || !userHost.includes('@')) return raw;
+    const contactLineMatch = raw.match(/^Contact:\s*([^\r\n]+)/im);
+    if (!contactLineMatch) return raw;
+    const contactValue = contactLineMatch[1];
+
+    const bindings = parseSipContactBindings(contactValue);
+    if (!bindings.length) return raw;
+
+    const chosen = pickRegisterContactBinding(bindings, contactUserName, instanceUuid);
+    if (!chosen) return raw;
 
     const expHdr = raw.match(/^Expires:\s*(\d+)/im);
-    const expires = expHdr ? expHdr[1] : '120';
-    const replacement = `Contact: <sip:${userHost};transport=ws>;expires=${expires}`;
+    const expires =
+        chosen.expires > 0 ? String(chosen.expires) : expHdr ? expHdr[1] : '120';
+
+    const inst =
+        instanceUuid != null && instanceUuid !== ''
+            ? `;+sip.instance="urn:uuid:${instanceUuid}"`
+            : '';
+    const replacement = `Contact: <sip:${chosen.userHost};transport=ws${inst}>;expires=${expires}`;
     return raw.replace(/^Contact:\s*[^\r\n]+/im, replacement);
 }
 
@@ -210,20 +280,23 @@ export class PhoneEngine {
 
         this.userAgent = new SIP.UserAgent(options);
         await this.userAgent.start();
-        this._patchTransportKamailioRegisterContact(this.userAgent);
+        this._patchTransportKamailioRegisterContact(this.userAgent, anonymousContactName, uuid);
     }
 
     /**
      * Wrap transport.onMessage so REGISTER 2xx responses parse (see sanitizeKamailioRegister2xxContact).
      * @param {*} ua - SIP.js UserAgent instance
+     * @param {string} contactUserName
+     * @param {string} instanceUuid
      */
-    _patchTransportKamailioRegisterContact(ua) {
+    _patchTransportKamailioRegisterContact(ua, contactUserName, instanceUuid) {
         const transport = ua?.transport;
         if (!transport || transport._kamailioRegisterContactPatched) return;
         const inner = transport.onMessage;
         if (typeof inner !== 'function') return;
         transport._kamailioRegisterContactPatched = true;
-        transport.onMessage = (msg) => inner(sanitizeKamailioRegister2xxContact(msg));
+        transport.onMessage = (msg) =>
+            inner(sanitizeKamailioRegister2xxContact(msg, contactUserName, instanceUuid));
     }
 
     // --- NEW: Custom Heartbeat Methods ---
