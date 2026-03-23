@@ -79,6 +79,17 @@ function populateDevices(selectEl, devices, selectedId) {
     });
 }
 
+/** Puts Hero domain / WSS into login advanced fields (use force on boot so they are never left blank). */
+function syncLoginServerFields({ force = false } = {}) {
+    const domainEl = document.getElementById('loginDomain');
+    const wssEl = document.getElementById('loginWss');
+    if (!domainEl || !wssEl) return;
+    const d = settings.get('domain') || CONFIG.DEFAULT_DOMAIN;
+    const w = settings.get('wssUrl') || CONFIG.DEFAULT_WSS;
+    if (force || !domainEl.value.trim()) domainEl.value = d;
+    if (force || !wssEl.value.trim()) wssEl.value = w;
+}
+
 function setupTabs() {
     document.querySelectorAll('.dashboard-tabs .tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -156,7 +167,12 @@ function attachEvents() {
         phone.connect();
     };
     document.querySelectorAll('.digit-btn').forEach(b => b.onclick = () => ui.dialString.value += b.dataset.digit);
-    document.getElementById('btnToggleAdvanced').onclick = () => document.getElementById('loginAdvanced').classList.toggle('hidden');
+    document.getElementById('btnToggleAdvanced').onclick = () => {
+        const adv = document.getElementById('loginAdvanced');
+        const opening = adv.classList.contains('hidden');
+        adv.classList.toggle('hidden');
+        if (opening) syncLoginServerFields();
+    };
     
     // Attach the history button listener
     document.getElementById('btnShowHistory').onclick = () => {
@@ -166,14 +182,13 @@ function attachEvents() {
     document.getElementById('btnCloseHistory').onclick = () => ui.panels.history.classList.add('hidden');
 }
 
-window.addEventListener('DOMContentLoaded', async () => {
+async function bootstrap() {
     attachEvents();
-    setupTabs(); // <-- Re-added the missing function call
+    setupTabs();
 
-    // Default Hero domain / WSS in advanced login fields (saved values or CONFIG).
-    ui.loginInputs.domain.value = settings.get('domain') || CONFIG.DEFAULT_DOMAIN;
-    ui.loginInputs.wss.value = settings.get('wssUrl') || CONFIG.DEFAULT_WSS;
-    
+    // Module + imports can load after DOMContentLoaded; do not rely on that event alone.
+    syncLoginServerFields({ force: true });
+
     const devs = await audio.init();
     populateDevices(ui.inputs.mic, devs.inputs, settings.get('micId'));
     populateDevices(ui.inputs.speaker, devs.outputs, settings.get('speakerId'));
@@ -189,7 +204,13 @@ window.addEventListener('DOMContentLoaded', async () => {
         }
         phone.connect();
     }
-});
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => void bootstrap());
+} else {
+    void bootstrap();
+}
 
 let timerInterval, timerSeconds = 0;
 function startTimer() { 
