@@ -1099,6 +1099,22 @@ input:checked + .slider:before {
     margin-top: 4px;
 }
 
+.agent-meta.subtle {
+    font-size: 0.75rem;
+    opacity: 0.85;
+}
+
+.supervisor-queue-item .queue-info {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+}
+
+.supervisor-queue-item .queue-ext {
+    margin-top: 0;
+}
+
 .queue-stats {
     display: flex;
     gap: 15px;

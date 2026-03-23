@@ -31,8 +31,20 @@ async function updatePhonebook() {
             if (result.contacts && result.contacts.contact) {
                 result.contacts.contact.forEach(c => {
                     const attr = c.$;
-                    if (attr.number) newBook[attr.number] = { name: attr.name, type: attr.name.includes("Queue") ? "queue" : "agent" };
-                    if (attr.phone) newBook[attr.phone] = { name: attr.name, type: "agent" };
+                    const name = (attr.name || '').trim();
+                    if (!name) return;
+                    const type = name.includes('Queue') ? 'queue' : 'agent';
+                    const phone = attr.phone ? String(attr.phone).trim() : '';
+                    const num = attr.number ? String(attr.number).trim() : '';
+                    // One row per contact: prefer full dialable extension (phone) as key so UI shows 8010… not short ids (7544).
+                    const key = phone || num;
+                    if (!key) return;
+                    newBook[key] = {
+                        name,
+                        type,
+                        extension: phone || num,
+                        ...(phone && num && phone !== num ? { shortNumber: num } : {})
+                    };
                 });
                 phonebookCache = newBook;
                 console.log(`✅ Phonebook Synced: ${Object.keys(newBook).length} entries.`);
