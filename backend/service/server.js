@@ -1,6 +1,6 @@
 /**
  * Hero PBX bridge: phonebook XML, live calls, recordings, optional Hero portal API (subscriber status).
- * Last modified: 2026-03-24 — phonebook authLogin/callerId for Hero subscriberStatus key probes.
+ * Last modified: 2026-03-24 — resolve short extension → SIP login via Hero Get-Subscriber-Info for subscriberStatus matching.
  */
 require('dotenv').config();
 const express = require('express');
@@ -13,9 +13,147 @@ const xml2js = require('xml2js');
 /** POST JSON to portal; token from Hero (same family as contacts.php link). */
 const HERO_API_URL = (process.env.HERO_API_URL || 'https://portal.hero.co.nz/api/').replace(/\/?$/, '/');
 const HERO_API_TOKEN = process.env.HERO_API_TOKEN || '';
+/** Hero JSON action to map PBX extension → auth SIP login (portal “Login: 8010614000xx”). Override if your tenant uses another name. */
+const HERO_SUBSCRIBER_INFO_ACTION = process.env.HERO_SUBSCRIBER_INFO_ACTION || 'Get-Subscriber-Info';
 
 let subscriberStatusCache = { data: null, fetchedAt: 0 };
 const SUBSCRIBER_STATUS_TTL_MS = 10000;
+
+const FULL_LOGIN_MIN_DIGITS = 11;
+function looksLikeHeroAuthLogin(s) {
+  return typeof s === 'string' && /^\d+$/.test(s) && s.length >= FULL_LOGIN_MIN_DIGITS;
+}
+
+/** ext string → { login: string|null, at: number, failUntil?: number } */
+const extensionLoginCache = new Map();
+const EXTENSION_LOGIN_TTL_MS = 6 * 60 * 60 * 1000;
+const EXTENSION_LOGIN_FAIL_TTL_MS = 15 * 60 * 1000;
+
+/**
+ * Short PBX extension for Hero info API (2–6 digits). Prefer explicit shortNumber from phonebook.
+ */
+function pickShortExtensionForInfoApi(mapKey, entry) {
+  if (!entry || entry.type !== 'agent') return '';
+  const shortNum = entry.shortNumber != null ? String(entry.shortNumber).trim() : '';
+  if (shortNum && /^\d{2,6}$/.test(shortNum)) return shortNum;
+  const ext = entry.extension != null ? String(entry.extension).trim() : '';
+  if (ext && /^\d{2,6}$/.test(ext) && !looksLikeHeroAuthLogin(ext)) return ext;
+  const k = String(mapKey || '').trim();
+  if (k && /^\d{2,6}$/.test(k) && !looksLikeHeroAuthLogin(k)) return k;
+  return '';
+}
+
+function entryAlreadyHasAuthLogin(mapKey, entry) {
+  if (!entry) return false;
+  if (entry.authLogin && looksLikeHeroAuthLogin(String(entry.authLogin))) return true;
+  if (looksLikeHeroAuthLogin(String(entry.extension || ''))) return true;
+  if (looksLikeHeroAuthLogin(String(mapKey || ''))) return true;
+  return false;
+}
+
+function extractLoginFromSubscriberInfoBody(body) {
+  if (!body || String(body.Result) !== '1') return null;
+  const d = body.Data;
+  if (d == null) return null;
+  if (typeof d === 'string') {
+    const s = d.trim();
+    return looksLikeHeroAuthLogin(s) ? s : null;
+  }
+  if (typeof d !== 'object') return null;
+  const preferredKeys = [
+    'AuthLogin',
+    'Login',
+    'login',
+    'SIPLogin',
+    'sip_login',
+    'UserLogin',
+    'ExtensionLogin',
+    'WebRTCLogin',
+    'SipUser',
+  ];
+  for (const k of preferredKeys) {
+    if (d[k] == null) continue;
+    const s = String(d[k]).trim();
+    if (looksLikeHeroAuthLogin(s)) return s;
+  }
+  for (const v of Object.values(d)) {
+    if (typeof v === 'string' && looksLikeHeroAuthLogin(v.trim())) return v.trim();
+  }
+  return null;
+}
+
+/**
+ * Fetches and caches SIP auth login for a numeric extension (e.g. 7442 → 801061400036).
+ * Use case: Get-Subscriber-Status keys are logins; contacts XML often only has short ext.
+ */
+async function fetchAndCacheExtensionLogin(ext) {
+  if (!HERO_API_TOKEN || !ext) return null;
+  const now = Date.now();
+  const prev = extensionLoginCache.get(ext);
+  if (prev && prev.login && now - prev.at < EXTENSION_LOGIN_TTL_MS) return prev.login;
+  if (prev && prev.failUntil && now < prev.failUntil) return null;
+
+  const bodies = [
+    { token: HERO_API_TOKEN, action: HERO_SUBSCRIBER_INFO_ACTION, context: 'voice', Extension: ext },
+    { token: HERO_API_TOKEN, action: HERO_SUBSCRIBER_INFO_ACTION, context: 'voice', Number: ext },
+  ];
+  try {
+    for (const json of bodies) {
+      const res = await axios.post(HERO_API_URL, json, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000,
+      });
+      const login = extractLoginFromSubscriberInfoBody(res.data);
+      if (login) {
+        extensionLoginCache.set(ext, { login, at: now });
+        return login;
+      }
+    }
+    console.warn(`Hero ${HERO_SUBSCRIBER_INFO_ACTION}: no parseable login for extension`, ext);
+  } catch (e) {
+    console.warn(`Hero ${HERO_SUBSCRIBER_INFO_ACTION} failed for ext ${ext}:`, e.message);
+  }
+  extensionLoginCache.set(ext, { login: null, at: now, failUntil: now + EXTENSION_LOGIN_FAIL_TTL_MS });
+  return null;
+}
+
+/**
+ * Deep-clone directory and attach authLogin from cache or Hero API so dashboard probes match Get-Subscriber-Status.
+ */
+async function buildEnrichedDirectoryForLiveStatus(directory) {
+  const clone = JSON.parse(JSON.stringify(directory || {}));
+  const toResolve = new Set();
+  for (const [k, v] of Object.entries(clone)) {
+    if (!v || v.type !== 'agent') continue;
+    if (entryAlreadyHasAuthLogin(k, v)) continue;
+    const ext = pickShortExtensionForInfoApi(k, v);
+    if (!ext) continue;
+    const prev = extensionLoginCache.get(ext);
+    const now = Date.now();
+    if (prev && prev.login && now - prev.at < EXTENSION_LOGIN_TTL_MS) {
+      clone[k] = { ...v, authLogin: prev.login };
+      continue;
+    }
+    if (!prev || !prev.failUntil || now >= prev.failUntil) toResolve.add(ext);
+  }
+
+  const list = [...toResolve];
+  const batchSize = 8;
+  for (let i = 0; i < list.length; i += batchSize) {
+    const chunk = list.slice(i, i + batchSize);
+    await Promise.all(chunk.map((ext) => fetchAndCacheExtensionLogin(ext)));
+  }
+
+  for (const [k, v] of Object.entries(clone)) {
+    if (!v || v.type !== 'agent' || v.authLogin) continue;
+    if (entryAlreadyHasAuthLogin(k, v)) continue;
+    const ext = pickShortExtensionForInfoApi(k, v);
+    if (!ext) continue;
+    const cached = extensionLoginCache.get(ext);
+    if (cached && cached.login) clone[k] = { ...v, authLogin: cached.login };
+  }
+  return clone;
+}
 
 /**
  * Hero Get-Subscriber-Status: maps SIP login / number -> "1" when online.
@@ -86,7 +224,15 @@ async function updatePhonebook() {
                     const num = attr.number ? String(attr.number).trim() : '';
                     const loginAttr = attr.login ? String(attr.login).trim() : '';
                     const extensionAttr = attr.extension ? String(attr.extension).trim() : '';
-                    const authLoginRaw = attr.authlogin || attr.auth_login || attr.auth || '';
+                    const authLoginRaw =
+                        attr.authlogin ||
+                        attr.auth_login ||
+                        attr.auth ||
+                        attr.sipuser ||
+                        attr.sip_user ||
+                        attr.username ||
+                        attr.user ||
+                        '';
                     const authLogin = authLoginRaw ? String(authLoginRaw).trim() : '';
                     const callerIdRaw = attr.callerid || attr.caller_id || attr.cli || '';
                     const callerId = callerIdRaw ? String(callerIdRaw).trim() : '';
@@ -141,9 +287,17 @@ app.get('/api/live-status', async (req, res) => {
     try {
         const activeCalls = await pool.query(`SELECT * FROM active_calls ORDER BY start_time DESC`);
         const subscriberStatus = await fetchSubscriberStatus();
+        let directoryPayload = phonebookCache;
+        if (HERO_API_TOKEN) {
+            try {
+                directoryPayload = await buildEnrichedDirectoryForLiveStatus(phonebookCache);
+            } catch (enrichErr) {
+                console.error('Directory enrich (extension→login) failed:', enrichErr.message);
+            }
+        }
         const payload = {
             calls: activeCalls.rows,
-            directory: phonebookCache,
+            directory: directoryPayload,
             stats: {
                 active_count: activeCalls.rows.filter(c => c.status === 'answered').length,
                 queue_count: activeCalls.rows.filter(c => c.status === 'ringing').length
