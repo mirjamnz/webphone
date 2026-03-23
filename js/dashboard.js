@@ -1,9 +1,9 @@
 /**
  * Live supervisor dashboard (active calls, directory-driven Agents/Queues, recordings).
- * Last modified: 2026-03-24 — Hero Get-Subscriber-Status passed into agent presence.
+ * Last modified: 2026-03-24 — data-hero-probe for Hero subscriberStatus key matching.
  */
 
-import { resolveAgentSipTargets } from './agent-sip-targets.js';
+import { resolveAgentSipTargets, subscriberStatusProbeIds } from './agent-sip-targets.js';
 
 function escapeHtml(s) {
     if (s == null) return '';
@@ -217,6 +217,7 @@ export class DashboardManager {
         container.innerHTML = agents.map(([number, data]) => {
             const displayName = escapeHtml(data.name || 'Agent');
             const { presenceUser, dialUser } = resolveAgentSipTargets(number, data);
+            const heroProbeCsv = subscriberStatusProbeIds(number, data).join(',');
             const shortNum = data.shortNumber != null ? String(data.shortNumber).trim() : '';
             const extBlock =
                 shortNum && presenceUser && shortNum !== presenceUser
@@ -225,7 +226,7 @@ export class DashboardManager {
                     : `<div class="agent-meta"><span class="agent-label">Extension:</span> ${escapeHtml(dialUser || presenceUser)}</div>`;
 
             return `
-            <div class="supervisor-agent-item" data-sip-login="${escapeAttr(presenceUser)}">
+            <div class="supervisor-agent-item" data-sip-login="${escapeAttr(presenceUser)}" data-hero-probe="${escapeAttr(heroProbeCsv)}">
                 <div class="dashboard-agent-status state-unknown" title="Presence">
                     <span class="dashboard-agent-status-dot" aria-hidden="true"></span>
                     <span class="dashboard-agent-status-label">…</span>

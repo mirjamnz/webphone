@@ -4,7 +4,7 @@
  *
  * Use case: Show green “online” / busy / ringing per agent login (full SIP user), matching main BLF.
  * Staggers SUBSCRIBE so Kamailio is not hit with dozens of parallel dialogs (avoids 408 / poisoned WS).
- * Last modified: 2026-03-24 — merge Hero Get-Subscriber-Status with SIP NOTIFY when both exist.
+ * Last modified: 2026-03-24 — Hero match via data-hero-probe; prefer Hero online when SIP idle/offline.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 import { resolveAgentSipTargets } from './agent-sip-targets.js';
@@ -122,29 +122,73 @@ export class DashboardAgentPresence {
         const container = document.getElementById('agentsList');
         if (!container) return;
         container.querySelectorAll('.supervisor-agent-item[data-sip-login]').forEach((row) => {
-            const login = row.getAttribute('data-sip-login');
-            if (login) this._paintRowFromMergedState(login);
+            this._paintRowFromMergedRow(row);
         });
     }
 
-    _paintRowFromMergedState(login) {
-        const sip = this.stateByLogin.get(login);
-        const hero = this._heroSubscriberStatus;
-        const heroOn = hero && hero[login] === '1';
-        const heroHasData = hero && Object.keys(hero).length > 0;
+    /**
+     * @param {Record<string, unknown>|null|undefined} hero
+     * @param {string[]} probes - directory / API identifiers for this row
+     */
+    _heroAnyOnline(hero, probes) {
+        if (!hero || !probes.length) return false;
+        for (const k of probes) {
+            const v = hero[k];
+            if (v === '1' || v === 1 || String(v).toLowerCase() === 'true') return true;
+        }
+        return false;
+    }
 
+    /** @param {Element} row */
+    _collectHeroProbes(row) {
+        const login = row.getAttribute('data-sip-login') || '';
+        const raw = row.getAttribute('data-hero-probe') || '';
+        const parts = raw
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
+        return [...new Set([...(login ? [login] : []), ...parts])];
+    }
+
+    _paintRowFromMergedState(login) {
+        const container = document.getElementById('agentsList');
+        if (!container || !login) return;
+        const row = container.querySelector(`.supervisor-agent-item[data-sip-login="${CSS.escape(login)}"]`);
+        if (row) this._paintRowFromMergedRow(row);
+    }
+
+    /** @param {Element} row */
+    _paintRowFromMergedRow(row) {
+        const login = row.getAttribute('data-sip-login');
+        const probes = this._collectHeroProbes(row);
+        const hero = this._heroSubscriberStatus;
+        const heroOn = this._heroAnyOnline(hero, probes);
+        const heroHasData = hero && Object.keys(hero).length > 0;
+        const sip = login ? this.stateByLogin.get(login) : undefined;
+
+        const busyLike = sip && (sip.state === 'talking' || sip.state === 'ringing');
+        if (busyLike) {
+            this._applyRowPresence(row, sip.state, sip.label);
+            return;
+        }
+        if (heroOn) {
+            this._applyRowPresence(row, 'available', 'Online');
+            return;
+        }
         if (sip) {
-            this._paintRow(login, sip.state, sip.label);
-        } else if (heroOn) {
-            this._paintRow(login, 'available', 'Online');
-        } else if (heroHasData) {
-            this._paintRow(login, 'offline', 'Offline');
-        } else if (!this.phone?.userAgent) {
-            this._paintRow(login, 'unknown', 'No line');
+            this._applyRowPresence(row, sip.state, sip.label);
+            return;
+        }
+        if (heroHasData && !heroOn) {
+            this._applyRowPresence(row, 'offline', 'Offline');
+            return;
+        }
+        if (!this.phone?.userAgent) {
+            this._applyRowPresence(row, 'unknown', 'No line');
         } else if (this.phone.lastKnownState !== 'Registered') {
-            this._paintRow(login, 'unknown', 'Not registered');
+            this._applyRowPresence(row, 'unknown', 'Not registered');
         } else {
-            this._paintRow(login, 'unknown', '…');
+            this._applyRowPresence(row, 'unknown', '…');
         }
     }
 
@@ -252,8 +296,11 @@ export class DashboardAgentPresence {
         const container = document.getElementById('agentsList');
         if (!container) return;
         const row = container.querySelector(`.supervisor-agent-item[data-sip-login="${CSS.escape(login)}"]`);
-        if (!row) return;
+        if (row) this._applyRowPresence(row, state, label);
+    }
 
+    /** @param {Element} row */
+    _applyRowPresence(row, state, label) {
         const block = row.querySelector('.dashboard-agent-status');
         const dot = row.querySelector('.dashboard-agent-status-dot');
         const lab = row.querySelector('.dashboard-agent-status-label');

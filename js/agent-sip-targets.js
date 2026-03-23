@@ -7,7 +7,7 @@
  *
  * Use case: SUBSCRIBE sip:801061400038@domain (registered) vs INVITE sip:7320@domain (routable).
  *
- * Last modified: 2026-03-24
+ * Last modified: 2026-03-24 — subscriberStatusProbeIds for Hero API key matching.
  */
 
 /** NZ Hero WebRTC logins are typically 11+ digit numeric strings. */
@@ -37,4 +37,31 @@ export function resolveAgentSipTargets(mapKey, data) {
     const dialUser = short || key || ext;
 
     return { presenceUser, dialUser };
+}
+
+/**
+ * Every directory identifier that might appear as a key in Hero Get-Subscriber-Status `Data`.
+ * Use case: API keys are often 8010614000xx or 09… CLI while `data-sip-login` may still be a short ext until phonebook is complete.
+ *
+ * @param {string} mapKey
+ * @param {{ type?: string, extension?: string|null, shortNumber?: string|null, authLogin?: string|null, callerId?: string|null }} data
+ * @returns {string[]}
+ */
+export function subscriberStatusProbeIds(mapKey, data) {
+    if (!data || data.type !== 'agent') return [];
+    const key = String(mapKey == null ? '' : mapKey).trim();
+    const ext = data.extension != null ? String(data.extension).trim() : '';
+    const short = data.shortNumber != null ? String(data.shortNumber).trim() : '';
+    const authLogin = data.authLogin != null ? String(data.authLogin).trim() : '';
+    const callerId = data.callerId != null ? String(data.callerId).trim() : '';
+    const { presenceUser, dialUser } = resolveAgentSipTargets(mapKey, data);
+
+    const seen = new Set();
+    const out = [];
+    for (const s of [presenceUser, dialUser, key, ext, short, authLogin, callerId]) {
+        if (!s || seen.has(s)) continue;
+        seen.add(s);
+        out.push(s);
+    }
+    return out;
 }

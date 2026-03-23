@@ -1,6 +1,6 @@
 /**
  * Hero PBX bridge: phonebook XML, live calls, recordings, optional Hero portal API (subscriber status).
- * Last modified: 2026-03-24 — Get-Subscriber-Status merged into /api/live-status (HERO_API_TOKEN).
+ * Last modified: 2026-03-24 — phonebook authLogin/callerId for Hero subscriberStatus key probes.
  */
 require('dotenv').config();
 const express = require('express');
@@ -86,6 +86,10 @@ async function updatePhonebook() {
                     const num = attr.number ? String(attr.number).trim() : '';
                     const loginAttr = attr.login ? String(attr.login).trim() : '';
                     const extensionAttr = attr.extension ? String(attr.extension).trim() : '';
+                    const authLoginRaw = attr.authlogin || attr.auth_login || attr.auth || '';
+                    const authLogin = authLoginRaw ? String(authLoginRaw).trim() : '';
+                    const callerIdRaw = attr.callerid || attr.caller_id || attr.cli || '';
+                    const callerId = callerIdRaw ? String(callerIdRaw).trim() : '';
                     // Full SIP/WebRTC user: phonebook may expose it as phone, login, or extension; short ext stays in number.
                     const fullLogin = phone || loginAttr || extensionAttr || '';
                     const key = fullLogin || num;
@@ -94,7 +98,9 @@ async function updatePhonebook() {
                         name,
                         type,
                         extension: fullLogin || num,
-                        ...(fullLogin && num && fullLogin !== num ? { shortNumber: num } : {})
+                        ...(fullLogin && num && fullLogin !== num ? { shortNumber: num } : {}),
+                        ...(authLogin ? { authLogin } : {}),
+                        ...(callerId ? { callerId } : {}),
                     };
                 });
                 phonebookCache = newBook;
