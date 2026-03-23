@@ -5,8 +5,8 @@ import { AudioManager } from './audio.js';
 import { PhoneEngine } from './phone.js';
 import { UserManager } from './user.js';
 import { QueueManager } from './queue.js';
-import { DashboardManager } from './dashboard.js?v=7';
-import { DashboardAgentPresence } from './dashboard-agent-presence.js?v=7';
+import { DashboardManager } from './dashboard.js?v=8';
+import { DashboardAgentPresence } from './dashboard-agent-presence.js?v=8';
 
 const settings = new SettingsManager();
 const userManager = new UserManager(settings);
