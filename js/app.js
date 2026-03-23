@@ -212,6 +212,9 @@ if (document.readyState === 'loading') {
     void bootstrap();
 }
 
+// Late pass: covers rare timing gaps; also helps once a newly fetched module runs after a cached HTML page.
+window.addEventListener('load', () => syncLoginServerFields());
+
 let timerInterval, timerSeconds = 0;
 function startTimer() { 
     timerSeconds = 0; 

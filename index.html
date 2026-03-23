@@ -31,14 +31,15 @@
             <div class="advanced-toggle" id="btnToggleAdvanced">
                 <i class="fa-solid fa-sliders"></i> Server Settings
             </div>
+            <!-- Defaults match js/config.js (DEFAULT_DOMAIN / DEFAULT_WSS) so Server Settings are not blank before JS or if app.js is cached. -->
             <div id="loginAdvanced" class="hidden">
                 <div class="input-group">
                     <label>Domain</label>
-                    <input type="text" id="loginDomain">
+                    <input type="text" id="loginDomain" name="hero-sip-domain" autocomplete="off" value="wss.hero.co.nz">
                 </div>
                 <div class="input-group">
                     <label>WSS URL</label>
-                    <input type="text" id="loginWss">
+                    <input type="text" id="loginWss" name="hero-sip-wss" autocomplete="off" value="wss://wss.hero.co.nz:7443/">
                 </div>
             </div>
             <button id="btnDoLogin" class="btn btn-primary full-width" style="margin-top: 20px;">Sign In</button>
@@ -217,7 +218,8 @@
 </div>
 
 <script src="https://unpkg.com/wavesurfer.js@7"></script>
-<script type="module" src="js/app.js"></script>
+<!-- Bump ?v= when app logic changes; Chrome caches ES modules aggressively (plain reload may keep old app.js). -->
+<script type="module" src="js/app.js?v=2"></script>
 
 </body>
 </html>
