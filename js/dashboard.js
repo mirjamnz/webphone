@@ -1,6 +1,6 @@
 /**
  * Live supervisor dashboard (active calls, directory-driven Agents/Queues, recordings).
- * Last modified: 2026-03-24 — split SIP presence user vs dial user for agent rows.
+ * Last modified: 2026-03-24 — Hero Get-Subscriber-Status passed into agent presence.
  */
 
 import { resolveAgentSipTargets } from './agent-sip-targets.js';
@@ -183,7 +183,7 @@ export class DashboardManager {
         if (this.ui.stats.agents) this.ui.stats.agents.innerText = agents.length;
 
         this.renderCallsList(active);
-        this.renderAgentsList(agents);
+        this.renderAgentsList(agents, data.subscriberStatus);
         this.renderQueuesList(queuesDir, queuedCalls);
     }
 
@@ -206,7 +206,11 @@ export class DashboardManager {
         }).join('') : '<div class="empty-state">No active calls</div>';
     }
 
-    renderAgentsList(agents) {
+    /**
+     * @param {Array<[string, object]>} agents
+     * @param {Record<string, string>|null|undefined} subscriberStatus - from Hero Get-Subscriber-Status Data (omit if API disabled)
+     */
+    renderAgentsList(agents, subscriberStatus) {
         const container = this.ui.lists.agents;
         if (!container) return;
         this._lastAgentTuples = agents;
@@ -236,6 +240,7 @@ export class DashboardManager {
             </div>`;
         }).join('');
 
+        this.agentPresence?.setHeroSubscriberStatus(subscriberStatus);
         this.agentPresence?.syncSubscriptions(agents);
         this.agentPresence?.paintAllRows();
     }

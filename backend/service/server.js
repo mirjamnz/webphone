@@ -1,3 +1,7 @@
+/**
+ * Hero PBX bridge: phonebook XML, live calls, recordings, optional Hero portal API (subscriber status).
+ * Last modified: 2026-03-24 — Get-Subscriber-Status merged into /api/live-status (HERO_API_TOKEN).
+ */
 require('dotenv').config();
 const express = require('express');
 const { Pool } = require('pg');
@@ -5,6 +9,50 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const axios = require('axios');
 const xml2js = require('xml2js');
+
+/** POST JSON to portal; token from Hero (same family as contacts.php link). */
+const HERO_API_URL = (process.env.HERO_API_URL || 'https://portal.hero.co.nz/api/').replace(/\/?$/, '/');
+const HERO_API_TOKEN = process.env.HERO_API_TOKEN || '';
+
+let subscriberStatusCache = { data: null, fetchedAt: 0 };
+const SUBSCRIBER_STATUS_TTL_MS = 10000;
+
+/**
+ * Hero Get-Subscriber-Status: maps SIP login / number -> "1" when online.
+ * @returns {Promise<Record<string, string>|null>} null if token not configured; object (maybe empty) otherwise
+ */
+async function fetchSubscriberStatus() {
+  if (!HERO_API_TOKEN) return null;
+
+  const now = Date.now();
+  if (subscriberStatusCache.data != null && now - subscriberStatusCache.fetchedAt < SUBSCRIBER_STATUS_TTL_MS) {
+    return subscriberStatusCache.data;
+  }
+
+  try {
+    const res = await axios.post(
+      HERO_API_URL,
+      {
+        token: HERO_API_TOKEN,
+        action: 'Get-Subscriber-Status',
+        context: 'voice',
+      },
+      { headers: { 'Content-Type': 'application/json' }, timeout: 12000 }
+    );
+    const body = res.data;
+    if (body && String(body.Result) === '1' && body.Data && typeof body.Data === 'object') {
+      subscriberStatusCache = { data: body.Data, fetchedAt: Date.now() };
+      return subscriberStatusCache.data;
+    }
+    console.warn('Get-Subscriber-Status: unexpected payload', body?.Status, body?.Message);
+    subscriberStatusCache.fetchedAt = Date.now();
+    return subscriberStatusCache.data != null ? subscriberStatusCache.data : {};
+  } catch (e) {
+    console.error('Get-Subscriber-Status failed:', e.message);
+    subscriberStatusCache.fetchedAt = Date.now();
+    return subscriberStatusCache.data != null ? subscriberStatusCache.data : {};
+  }
+}
 
 const app = express();
 app.use(bodyParser.json());
@@ -86,14 +134,17 @@ app.post('/hero-webhook', async (req, res) => {
 app.get('/api/live-status', async (req, res) => {
     try {
         const activeCalls = await pool.query(`SELECT * FROM active_calls ORDER BY start_time DESC`);
-        res.json({
+        const subscriberStatus = await fetchSubscriberStatus();
+        const payload = {
             calls: activeCalls.rows,
             directory: phonebookCache,
             stats: {
                 active_count: activeCalls.rows.filter(c => c.status === 'answered').length,
                 queue_count: activeCalls.rows.filter(c => c.status === 'ringing').length
             }
-        });
+        };
+        if (subscriberStatus != null) payload.subscriberStatus = subscriberStatus;
+        res.json(payload);
     } catch (e) { res.status(500).send("Error"); }
 });
 

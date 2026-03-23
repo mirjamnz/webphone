@@ -4,7 +4,7 @@
  *
  * Use case: Show green “online” / busy / ringing per agent login (full SIP user), matching main BLF.
  * Staggers SUBSCRIBE so Kamailio is not hit with dozens of parallel dialogs (avoids 408 / poisoned WS).
- * Last modified: 2026-03-24 — presence user via resolveAgentSipTargets (long login vs short ext).
+ * Last modified: 2026-03-24 — merge Hero Get-Subscriber-Status with SIP NOTIFY when both exist.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 import { resolveAgentSipTargets } from './agent-sip-targets.js';
@@ -53,6 +53,19 @@ export class DashboardAgentPresence {
         this._subscribeQueue = [];
         this._subscribePumpTimer = null;
         this._pumpRunning = false;
+        /** @type {Record<string, string>|null} Hero portal online map (login -> "1"); null = feature off */
+        this._heroSubscriberStatus = null;
+    }
+
+    /**
+     * @param {Record<string, string>|null|undefined} map - from /api/live-status subscriberStatus; undefined/null disables Hero overlay
+     */
+    setHeroSubscriberStatus(map) {
+        if (map == null || typeof map !== 'object') {
+            this._heroSubscriberStatus = null;
+            return;
+        }
+        this._heroSubscriberStatus = { ...map };
     }
 
     _clearSubscribePump() {
@@ -93,10 +106,7 @@ export class DashboardAgentPresence {
                 this._unsubscribeOne(login);
             }
             this.stateByLogin.clear();
-            const hint = !ua ? 'No line' : 'Not registered';
-            for (const login of wanted) {
-                this._paintRow(login, 'unknown', hint);
-            }
+            this.paintAllRows();
             return;
         }
 
@@ -107,28 +117,35 @@ export class DashboardAgentPresence {
         }
     }
 
-    /** Re-apply cached states after DOM list refresh (poll re-render). */
+    /** Re-apply merged Hero + SIP state for every agent row in the DOM. */
     paintAllRows() {
-        for (const [login, { state, label }] of this.stateByLogin) {
-            this._paintRow(login, state, label);
-        }
-        this._paintDisconnectedRows();
-    }
-
-    _paintDisconnectedRows() {
         const container = document.getElementById('agentsList');
         if (!container) return;
         container.querySelectorAll('.supervisor-agent-item[data-sip-login]').forEach((row) => {
             const login = row.getAttribute('data-sip-login');
-            if (!login || this.stateByLogin.has(login)) return;
-            if (!this.phone?.userAgent) {
-                this._paintRow(login, 'unknown', 'No line');
-            } else if (this.phone.lastKnownState !== 'Registered') {
-                this._paintRow(login, 'unknown', 'Not registered');
-            } else {
-                this._paintRow(login, 'unknown', '…');
-            }
+            if (login) this._paintRowFromMergedState(login);
         });
+    }
+
+    _paintRowFromMergedState(login) {
+        const sip = this.stateByLogin.get(login);
+        const hero = this._heroSubscriberStatus;
+        const heroOn = hero && hero[login] === '1';
+        const heroHasData = hero && Object.keys(hero).length > 0;
+
+        if (sip) {
+            this._paintRow(login, sip.state, sip.label);
+        } else if (heroOn) {
+            this._paintRow(login, 'available', 'Online');
+        } else if (heroHasData) {
+            this._paintRow(login, 'offline', 'Offline');
+        } else if (!this.phone?.userAgent) {
+            this._paintRow(login, 'unknown', 'No line');
+        } else if (this.phone.lastKnownState !== 'Registered') {
+            this._paintRow(login, 'unknown', 'Not registered');
+        } else {
+            this._paintRow(login, 'unknown', '…');
+        }
     }
 
     _enqueueSubscribe(login) {
@@ -198,7 +215,7 @@ export class DashboardAgentPresence {
                 if (body) {
                     const { state, label } = parsePidfPresence(body);
                     this.stateByLogin.set(login, { state, label });
-                    this._paintRow(login, state, label);
+                    this._paintRowFromMergedState(login);
                 }
                 notification.accept();
             }
