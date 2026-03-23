@@ -36,14 +36,17 @@ async function updatePhonebook() {
                     const type = name.includes('Queue') ? 'queue' : 'agent';
                     const phone = attr.phone ? String(attr.phone).trim() : '';
                     const num = attr.number ? String(attr.number).trim() : '';
-                    // One row per contact: prefer full dialable extension (phone) as key so UI shows 8010… not short ids (7544).
-                    const key = phone || num;
+                    const loginAttr = attr.login ? String(attr.login).trim() : '';
+                    const extensionAttr = attr.extension ? String(attr.extension).trim() : '';
+                    // Full SIP/WebRTC user: phonebook may expose it as phone, login, or extension; short ext stays in number.
+                    const fullLogin = phone || loginAttr || extensionAttr || '';
+                    const key = fullLogin || num;
                     if (!key) return;
                     newBook[key] = {
                         name,
                         type,
-                        extension: phone || num,
-                        ...(phone && num && phone !== num ? { shortNumber: num } : {})
+                        extension: fullLogin || num,
+                        ...(fullLogin && num && fullLogin !== num ? { shortNumber: num } : {})
                     };
                 });
                 phonebookCache = newBook;

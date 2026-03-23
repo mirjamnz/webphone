@@ -4,12 +4,13 @@
  *
  * Use case: Show green “online” / busy / ringing per agent login (full SIP user), matching main BLF.
  * Staggers SUBSCRIBE so Kamailio is not hit with dozens of parallel dialogs (avoids 408 / poisoned WS).
- * Last modified: 2026-03-24
+ * Last modified: 2026-03-24 — presence user via resolveAgentSipTargets (long login vs short ext).
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
+import { resolveAgentSipTargets } from './agent-sip-targets.js';
 
-const SUBSCRIBE_STAGGER_MS = 110;
-const SUBSCRIBE_INITIAL_DELAY_MS = 200;
+const SUBSCRIBE_STAGGER_MS = 200;
+const SUBSCRIBE_INITIAL_DELAY_MS = 350;
 
 function parsePidfPresence(xmlBody) {
     const parser = new DOMParser();
@@ -76,8 +77,8 @@ export class DashboardAgentPresence {
         const wanted = new Set();
         for (const [numKey, d] of agents) {
             if (!d || d.type !== 'agent') continue;
-            const login = String(numKey || d.extension || '').trim();
-            if (login) wanted.add(login);
+            const { presenceUser } = resolveAgentSipTargets(numKey, d);
+            if (presenceUser) wanted.add(presenceUser);
         }
         this._currentWanted = wanted;
 

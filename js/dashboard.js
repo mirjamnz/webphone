@@ -1,7 +1,9 @@
 /**
  * Live supervisor dashboard (active calls, directory-driven Agents/Queues, recordings).
- * Last modified: 2026-03-25 — agent BLF status + call; extension vs login lines.
+ * Last modified: 2026-03-24 — split SIP presence user vs dial user for agent rows.
  */
+
+import { resolveAgentSipTargets } from './agent-sip-targets.js';
 
 function escapeHtml(s) {
     if (s == null) return '';
@@ -210,16 +212,16 @@ export class DashboardManager {
         this._lastAgentTuples = agents;
         container.innerHTML = agents.map(([number, data]) => {
             const displayName = escapeHtml(data.name || 'Agent');
-            // Prefer directory map key (canonical full login from phonebook merge) over extension field.
-            const sipLogin = String(number || data.extension || '').trim();
+            const { presenceUser, dialUser } = resolveAgentSipTargets(number, data);
             const shortNum = data.shortNumber != null ? String(data.shortNumber).trim() : '';
-            const extBlock = shortNum
-                ? `<div class="agent-meta"><span class="agent-label">Extension:</span> ${escapeHtml(shortNum)}</div>
-                   <div class="agent-meta subtle"><span class="agent-label">Login:</span> ${escapeHtml(sipLogin)}</div>`
-                : `<div class="agent-meta"><span class="agent-label">Extension:</span> ${escapeHtml(sipLogin)}</div>`;
+            const extBlock =
+                shortNum && presenceUser && shortNum !== presenceUser
+                    ? `<div class="agent-meta"><span class="agent-label">Extension:</span> ${escapeHtml(shortNum)}</div>
+                   <div class="agent-meta subtle"><span class="agent-label">Login:</span> ${escapeHtml(presenceUser)}</div>`
+                    : `<div class="agent-meta"><span class="agent-label">Extension:</span> ${escapeHtml(dialUser || presenceUser)}</div>`;
 
             return `
-            <div class="supervisor-agent-item" data-sip-login="${escapeAttr(sipLogin)}">
+            <div class="supervisor-agent-item" data-sip-login="${escapeAttr(presenceUser)}">
                 <div class="dashboard-agent-status state-unknown" title="Presence">
                     <span class="dashboard-agent-status-dot" aria-hidden="true"></span>
                     <span class="dashboard-agent-status-label">…</span>
@@ -228,7 +230,7 @@ export class DashboardManager {
                     <span class="agent-extension" title="Display name">${displayName}</span>
                     ${extBlock}
                 </div>
-                <button type="button" class="btn-icon-only agent-dash-call-btn" data-dial="${escapeAttr(sipLogin)}" title="Call this agent">
+                <button type="button" class="btn-icon-only agent-dash-call-btn" data-dial="${escapeAttr(dialUser)}" title="Call this agent">
                     <i class="fa-solid fa-phone"></i>
                 </button>
             </div>`;
