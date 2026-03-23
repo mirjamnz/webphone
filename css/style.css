@@ -1024,6 +1024,69 @@ input:checked + .slider:before {
     transition: all 0.2s;
 }
 
+/* Agents tab: BLF-style presence + call (mirrors .blf-chip states) */
+.supervisor-agent-item {
+    gap: 14px;
+}
+
+.dashboard-agent-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 118px;
+    flex-shrink: 0;
+}
+
+.dashboard-agent-status-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
+    background: #94a3b8;
+    flex-shrink: 0;
+}
+
+.dashboard-agent-status-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.dashboard-agent-status.state-available .dashboard-agent-status-dot {
+    background: var(--success);
+    box-shadow: 0 0 8px var(--success);
+}
+
+.dashboard-agent-status.state-ringing .dashboard-agent-status-dot {
+    background: var(--warning);
+    animation: blink-animation 1s infinite;
+}
+
+.dashboard-agent-status.state-talking .dashboard-agent-status-dot {
+    background: var(--danger);
+    box-shadow: 0 0 8px var(--danger);
+}
+
+.dashboard-agent-status.state-offline .dashboard-agent-status-dot {
+    background: #64748b;
+    box-shadow: none;
+    opacity: 0.5;
+}
+
+.dashboard-agent-status.state-unknown .dashboard-agent-status-dot {
+    background: #64748b;
+    opacity: 0.7;
+}
+
+.supervisor-agent-item .agent-dash-call-btn {
+    color: var(--primary);
+    flex-shrink: 0;
+}
+
+.supervisor-agent-item .agent-dash-call-btn:hover {
+    color: white;
+}
+
 .supervisor-call-item:hover,
 .supervisor-agent-item:hover,
 .supervisor-queue-item:hover {

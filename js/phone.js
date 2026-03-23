@@ -306,7 +306,8 @@ export class PhoneEngine {
 
     async call(destination) {
         if (!this.userAgent) throw new Error("Phone not connected");
-        const target = SIP.UserAgent.makeURI(`sip:${destination}@${this.config.DEFAULT_DOMAIN}`);
+        const domain = this.settings.get('domain') || this.config.DEFAULT_DOMAIN;
+        const target = SIP.UserAgent.makeURI(`sip:${destination}@${domain}`);
         const session = new SIP.Inviter(this.userAgent, target);
         this.setupSession(session);
         return session.invite();

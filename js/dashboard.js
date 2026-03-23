@@ -1,6 +1,6 @@
 /**
  * Live supervisor dashboard (active calls, directory-driven Agents/Queues, recordings).
- * Last modified: 2026-03-24 — agent rows show display name + canonical extension (Hero phone field).
+ * Last modified: 2026-03-25 — agent BLF status + call; extension vs login lines.
  */
 
 function escapeHtml(s) {
@@ -31,6 +31,8 @@ export class DashboardManager {
         this.directory = {};
         this.allRecordings = [];
         this.wavesurfer = null;
+        /** @type {import('./dashboard-agent-presence.js').DashboardAgentPresence | null} */
+        this.agentPresence = null;
 
         this.ui = {
             stats: {
@@ -48,6 +50,11 @@ export class DashboardManager {
 
         this.initWaveSurfer();
         this.initModalListeners();
+    }
+
+    /** @param {import('./dashboard-agent-presence.js').DashboardAgentPresence | null} controller */
+    setAgentPresence(controller) {
+        this.agentPresence = controller;
     }
 
     /** Resolve directory row by exact key or by extension / shortNumber (for live call legs using short ids). */
@@ -102,6 +109,18 @@ export class DashboardManager {
             }
         });
 
+        const agentsList = this.ui.lists.agents;
+        if (agentsList && !agentsList.dataset.callDelegated) {
+            agentsList.dataset.callDelegated = 'true';
+            agentsList.addEventListener('click', (e) => {
+                const btn = e.target.closest('.agent-dash-call-btn');
+                const dial = btn?.getAttribute('data-dial');
+                if (!dial || !window.app?.callSpecial) return;
+                e.preventDefault();
+                window.app.callSpecial(dial);
+            });
+        }
+
         const recList = this.ui.lists.recordings;
         if (recList && !recList.dataset.playDelegated) {
             recList.dataset.playDelegated = 'true';
@@ -143,7 +162,9 @@ export class DashboardManager {
         const calls = data.calls || [];
         const active = calls.filter(c => c.status === 'answered');
         const queuedCalls = calls.filter(c => c.status === 'ringing');
-        const agents = Object.entries(this.directory).filter(([num, d]) => d.type === 'agent');
+        const agents = Object.entries(this.directory)
+            .filter(([, d]) => d.type === 'agent')
+            .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || '', undefined, { sensitivity: 'base' }));
         const queuesDir = Object.entries(this.directory).filter(([num, d]) => d.type === 'queue');
 
         if (this.ui.stats.active) this.ui.stats.active.innerText = active.length;
@@ -179,20 +200,31 @@ export class DashboardManager {
         if (!container) return;
         container.innerHTML = agents.map(([number, data]) => {
             const displayName = escapeHtml(data.name || 'Agent');
-            const ext = escapeHtml(data.extension != null ? String(data.extension) : number);
-            const shortHint =
-                data.shortNumber != null && String(data.shortNumber) !== ext
-                    ? `<div class="agent-meta subtle">ID: ${escapeHtml(data.shortNumber)}</div>`
-                    : '';
+            const sipLogin = String(data.extension != null ? data.extension : number).trim();
+            const shortNum = data.shortNumber != null ? String(data.shortNumber).trim() : '';
+            const extBlock = shortNum
+                ? `<div class="agent-meta"><span class="agent-label">Extension:</span> ${escapeHtml(shortNum)}</div>
+                   <div class="agent-meta subtle"><span class="agent-label">Login:</span> ${escapeHtml(sipLogin)}</div>`
+                : `<div class="agent-meta"><span class="agent-label">Extension:</span> ${escapeHtml(sipLogin)}</div>`;
+
             return `
-            <div class="supervisor-agent-item">
+            <div class="supervisor-agent-item" data-sip-login="${escapeAttr(sipLogin)}">
+                <div class="dashboard-agent-status state-unknown" title="Presence">
+                    <span class="dashboard-agent-status-dot" aria-hidden="true"></span>
+                    <span class="dashboard-agent-status-label">…</span>
+                </div>
                 <div class="agent-info">
                     <span class="agent-extension" title="Display name">${displayName}</span>
-                    <div class="agent-meta"><span class="agent-label">Extension:</span> ${ext}</div>
-                    ${shortHint}
+                    ${extBlock}
                 </div>
+                <button type="button" class="btn-icon-only agent-dash-call-btn" data-dial="${escapeAttr(sipLogin)}" title="Call this agent">
+                    <i class="fa-solid fa-phone"></i>
+                </button>
             </div>`;
         }).join('');
+
+        this.agentPresence?.syncSubscriptions(agents);
+        this.agentPresence?.paintAllRows();
     }
 
     renderQueuesList(queues, queuedCalls) {

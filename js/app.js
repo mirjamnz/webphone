@@ -3,20 +3,19 @@ import { CONFIG } from './config.js';
 import { SettingsManager } from './settings.js';
 import { AudioManager } from './audio.js';
 import { PhoneEngine } from './phone.js';
-import { BlfManager } from './blf.js';
 import { UserManager } from './user.js';
 import { QueueManager } from './queue.js';
 import { DashboardManager } from './dashboard.js';
+import { DashboardAgentPresence } from './dashboard-agent-presence.js';
 
 const settings = new SettingsManager();
 const userManager = new UserManager(settings);
 const dashboardManager = new DashboardManager(settings);
-window.app = { dashboard: dashboardManager };
+
 const audio = new AudioManager(settings);
 const historyManager = new HistoryManager(settings, {
     onRedial: (num) => { ui.panels.history.classList.add('hidden'); ui.dialString.value = num; }
 });
-
 
 const ui = {
     dialString: document.getElementById('dialString'),
@@ -66,6 +65,24 @@ const phoneCallbacks = {
 };
 
 const phone = new PhoneEngine(CONFIG, settings, audio, phoneCallbacks);
+const dashboardAgentPresence = new DashboardAgentPresence(phone, settings);
+dashboardManager.setAgentPresence(dashboardAgentPresence);
+
+window.app = {
+    dashboard: dashboardManager,
+    async callSpecial(num) {
+        if (num == null || String(num).trim() === '') return;
+        const dest = String(num).trim();
+        try {
+            await navigator.mediaDevices.getUserMedia({ audio: true });
+            ui.dialString.value = dest;
+            await phone.call(dest);
+        } catch (e) {
+            console.error(e);
+            alert(e?.message || 'Call failed');
+        }
+    }
+};
 
 function populateDevices(selectEl, devices, selectedId) {
     if (!selectEl) return;
