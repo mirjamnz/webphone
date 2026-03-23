@@ -1,6 +1,6 @@
 /**
  * js/phone.js
- * Simplified SIP/WebRTC Engine with RFC 5626 (Outbound) and ICE Fixes
+ * Simplified SIP/WebRTC Engine with RFC 5626 (Outbound), ICE Fixes, and Heartbeat Watchdog
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
@@ -59,14 +59,35 @@ export class PhoneEngine {
         this.userAgent = null;
         this.session = null;
         this.registerer = null;
+        
+        // --- Registration Tuning ---
+        this.registererOptions = {
+            expires: 120, // Lowered from 600 to 120 seconds (2 minutes)
+            refreshFrequency: 90 // Refresh at 90% of expiry (every ~108 seconds)
+        };
+        
+        // --- NEW: Watchdog Variables ---
+        this.intentionalDisconnect = false;
+        this.reconnectTimer = null;
+        this.lastRegisterTime = Date.now();
+        this.lastHeartbeat = Date.now();
+        this.heartbeatInterval = null;
+        this.maxHeartbeatDelay = 30000; // 30 seconds
+        this.heartbeatThreshold = 10000; // 10 seconds
+        this.lastKnownState = null;
+        this.lastKnownDomain = null;
     }
 
     async connect() {
+        this.intentionalDisconnect = false;
+        if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+        this.stopHeartbeat(); // Clear any zombie intervals
+
         if (this.userAgent) await this.disconnect();
 
         const user = this.settings.get('username');
         const pass = this.settings.get('password');
-        const domain = this.settings.get('domain') || this.config.DEFAULT_DOMAIN;
+        this.lastKnownDomain = this.settings.get('domain') || this.config.DEFAULT_DOMAIN;
         
         if (!user || !pass) return;
 
@@ -95,58 +116,93 @@ export class PhoneEngine {
         }
         ------------------------------------------------------ */
 
-        const uri = SIP.UserAgent.makeURI(`sip:${user}@${domain}`);
+        const uri = SIP.UserAgent.makeURI(`sip:${user}@${this.lastKnownDomain}`);
         const uuid = getPersistentInstanceId();
-        
-        // [FIX]: Use the persistent anonymous string so the PBX knows you are the same device
-        // across page reloads, stopping the ghost registrations and 401 split-brain errors.
         const anonymousContactName = getPersistentContactName();
 
+        // Spread SIP defaults first, then override so saved wssUrl / TURN ICE are not clobbered by a trailing spread.
         const options = {
+            ...this.config.SIP_OPTIONS,
             uri: uri,
-            transportOptions: this.config.SIP_OPTIONS.transportOptions,
             authorizationUsername: user,
             authorizationPassword: pass,
-            
-            // Apply the stable anonymous string so Kamailio correctly routes the ACK
-            contactName: anonymousContactName, 
-            
-            // Force inject the Outbound instance tags to ensure Kamailio overwrites
-            // old connections instead of creating duplicate "ghost" connections.
-            contactParams: { 
+            contactName: anonymousContactName,
+            contactParams: {
                 transport: 'ws',
                 '+sip.ice': undefined,
                 'reg-id': 1,
                 '+sip.instance': `"urn:uuid:${uuid}"`
             },
-            hackIpInContact: false,
-            
-            // Explicitly tell Kamailio we support RFC 5626 Outbound routing
+            hackAllowUnregisteredOptionTags: true,
+            hackIpInContact: true,
+            forceRport: true,
             sipExtensionExtraSupported: ['outbound'],
-
+            transportOptions: {
+                ...this.config.SIP_OPTIONS.transportOptions,
+                server: this.settings.get('wssUrl') || this.config.SIP_OPTIONS.transportOptions.server
+            },
             sessionDescriptionHandlerFactoryOptions: {
                 peerConnectionConfiguration: { iceServers: iceServers }
             },
-
             delegate: {
                 onConnect: () => {
+                    console.log("🟢 WebSocket Connected");
                     this.callbacks.onStatus('Connected');
+                    this.lastKnownState = 'Connected';
+                    this.startHeartbeat();
                     this.register();
                 },
                 onInvite: (invitation) => this.handleIncomingCall(invitation),
-                onDisconnect: () => {
+                onDisconnect: (error) => {
+                    console.warn("🔴 WebSocket Disconnected", error);
                     this.callbacks.onStatus('Disconnected');
+                    this.lastKnownState = 'Disconnected';
                     this.registerer = null;
+                    this.stopHeartbeat();
+
+                    if (!this.intentionalDisconnect) {
+                        console.log("⏱️ Attempting auto-reconnect in 5s...");
+                        this.reconnectTimer = setTimeout(() => this.connect(), 5000);
+                    }
                 }
-            },
-            ...this.config.SIP_OPTIONS
+            }
         };
 
         this.userAgent = new SIP.UserAgent(options);
         await this.userAgent.start();
     }
 
+    // --- NEW: Custom Heartbeat Methods ---
+    startHeartbeat() {
+        if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+        this.lastHeartbeat = Date.now();
+        
+        this.heartbeatInterval = setInterval(() => {
+            if (this.intentionalDisconnect) return this.stopHeartbeat();
+
+            const now = Date.now();
+            // If the browser slept or the network froze, 'now' will jump far ahead
+            if (now - this.lastHeartbeat > this.maxHeartbeatDelay) {
+                console.error("💀 Heartbeat timeout! Network likely froze. Forcing reconnect...");
+                this.connect(); 
+            } else {
+                this.lastHeartbeat = now; // All good, update the tick
+            }
+        }, this.heartbeatThreshold);
+    }
+
+    stopHeartbeat() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
+    }
+
     async disconnect() {
+        this.intentionalDisconnect = true;
+        this.stopHeartbeat();
+        if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+
         if (this.registerer) {
             try { await this.registerer.unregister(); } catch (e) {}
             this.registerer = null;
@@ -166,22 +222,42 @@ export class PhoneEngine {
             this.registerer = null;
         }
         
-        const domain = this.settings.get('domain') || this.config.DEFAULT_DOMAIN;
-        
-        this.registerer = new SIP.Registerer(this.userAgent);
+        this.registerer = new SIP.Registerer(this.userAgent, this.registererOptions);
         
         this.registerer.stateChange.addListener((state) => {
             if (state === SIP.RegistererState.Registered) {
                 this.callbacks.onStatus('Registered');
-                console.log('Registration successful with domain:', domain);
-            } else if (state === SIP.RegistererState.Unregistered) {
+                this.lastKnownState = 'Registered';
+                this.lastRegisterTime = Date.now();
+                console.log('✅ Registration successful!');
+            } 
+            else if (state === SIP.RegistererState.Unregistered || state === SIP.RegistererState.Terminated) {
                 this.callbacks.onStatus('Unregistered');
+                this.lastKnownState = 'Unregistered';
+                
+                // --- THE FIX: The Sledgehammer ---
+                if (!this.intentionalDisconnect) {
+                    console.warn("⚠️ Registration dropped (408 Timeout). Socket is likely poisoned. Forcing full TCP/WS teardown in 3s...");
+                    
+                    // Clear the old instance completely
+                    if (this.userAgent) {
+                        this.userAgent.stop().catch(()=>{});
+                    }
+                    
+                    // Call connect() instead of register() to get a brand new WebSocket and Call-ID
+                    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+                    this.reconnectTimer = setTimeout(() => this.connect(), 3000);
+                }
             }
         });
         
-        await this.registerer.register();
+        try {
+            await this.registerer.register();
+        } catch (e) {
+            console.error("Register attempt failed:", e);
+        }
     }
-
+    
     handleIncomingCall(invitation) {
         const remoteUser = invitation.remoteIdentity.uri.user;
         this.audio.startRinging();

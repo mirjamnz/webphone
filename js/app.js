@@ -100,6 +100,38 @@ function setupTabs() {
 }
 
 function attachEvents() {
+    // Sign In: save server settings from advanced fields, then start SIP (this handler was missing, so login did nothing).
+    document.getElementById('btnDoLogin').onclick = async () => {
+        const user = ui.loginInputs.user.value.trim();
+        const pass = ui.loginInputs.pass.value;
+        const domain = (ui.loginInputs.domain.value || CONFIG.DEFAULT_DOMAIN).trim();
+        const wss = (ui.loginInputs.wss.value || CONFIG.DEFAULT_WSS).trim();
+
+        if (!user || !pass) {
+            alert('Please enter extension and password');
+            return;
+        }
+
+        settings.save({
+            username: user,
+            password: pass,
+            domain,
+            wssUrl: wss
+        });
+
+        ui.loginPage.classList.add('hidden');
+        ui.mainApp.classList.remove('hidden');
+
+        await userManager.initializeFromExtension(user);
+
+        if (userManager.hasRole('supervisor')) {
+            document.getElementById('supervisorDashboard').classList.remove('hidden');
+            dashboardManager.start();
+        }
+
+        phone.connect();
+    };
+
     ui.btnCall.onclick = async () => {
         try {
             await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -137,6 +169,10 @@ function attachEvents() {
 window.addEventListener('DOMContentLoaded', async () => {
     attachEvents();
     setupTabs(); // <-- Re-added the missing function call
+
+    // Default Hero domain / WSS in advanced login fields (saved values or CONFIG).
+    ui.loginInputs.domain.value = settings.get('domain') || CONFIG.DEFAULT_DOMAIN;
+    ui.loginInputs.wss.value = settings.get('wssUrl') || CONFIG.DEFAULT_WSS;
     
     const devs = await audio.init();
     populateDevices(ui.inputs.mic, devs.inputs, settings.get('micId'));
