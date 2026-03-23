@@ -1,6 +1,7 @@
 /**
  * js/phone.js
  * Simplified SIP/WebRTC Engine with RFC 5626 (Outbound), ICE Fixes, and Heartbeat Watchdog
+ * Last modified: 2026-03-24 — heartbeat ignores background timer throttling (e.g. Cursor browser panel).
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
@@ -76,6 +77,14 @@ export class PhoneEngine {
         this.heartbeatThreshold = 10000; // 10 seconds
         this.lastKnownState = null;
         this.lastKnownDomain = null;
+
+        // Page Visibility: embedded Chromium (Cursor Simple Browser) throttles setInterval while unfocused;
+        // without this, lastHeartbeat stalls and we false-trigger reconnect → lost registration.
+        this._onVisibilityForHeartbeat = () => {
+            if (typeof document !== 'undefined' && !document.hidden) {
+                this.lastHeartbeat = Date.now();
+            }
+        };
     }
 
     async connect() {
@@ -176,17 +185,28 @@ export class PhoneEngine {
     startHeartbeat() {
         if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
         this.lastHeartbeat = Date.now();
-        
+
+        if (typeof document !== 'undefined') {
+            document.removeEventListener('visibilitychange', this._onVisibilityForHeartbeat);
+            document.addEventListener('visibilitychange', this._onVisibilityForHeartbeat);
+        }
+
         this.heartbeatInterval = setInterval(() => {
             if (this.intentionalDisconnect) return this.stopHeartbeat();
 
             const now = Date.now();
+            // While hidden, timers are unreliable; do not treat a gap as network death.
+            if (typeof document !== 'undefined' && document.hidden) {
+                this.lastHeartbeat = now;
+                return;
+            }
+
             // If the browser slept or the network froze, 'now' will jump far ahead
             if (now - this.lastHeartbeat > this.maxHeartbeatDelay) {
                 console.error("💀 Heartbeat timeout! Network likely froze. Forcing reconnect...");
-                this.connect(); 
+                this.connect();
             } else {
-                this.lastHeartbeat = now; // All good, update the tick
+                this.lastHeartbeat = now;
             }
         }, this.heartbeatThreshold);
     }
@@ -195,6 +215,9 @@ export class PhoneEngine {
         if (this.heartbeatInterval) {
             clearInterval(this.heartbeatInterval);
             this.heartbeatInterval = null;
+        }
+        if (typeof document !== 'undefined') {
+            document.removeEventListener('visibilitychange', this._onVisibilityForHeartbeat);
         }
     }
 
