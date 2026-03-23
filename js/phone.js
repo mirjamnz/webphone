@@ -1,7 +1,7 @@
 /**
  * js/phone.js
  * Simplified SIP/WebRTC Engine with RFC 5626 (Outbound), ICE Fixes, and Heartbeat Watchdog
- * Last modified: 2026-03-24 — heartbeat ignores background timer throttling (e.g. Cursor browser panel).
+ * Last modified: 2026-03-24 — register: false (manual Registerer only); heartbeat visibility handling.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
@@ -132,6 +132,8 @@ export class PhoneEngine {
         // Spread SIP defaults first, then override so saved wssUrl / TURN ICE are not clobbered by a trailing spread.
         const options = {
             ...this.config.SIP_OPTIONS,
+            // CONFIG may set register: true; we use an explicit Registerer below — avoid double REGISTER.
+            register: false,
             uri: uri,
             authorizationUsername: user,
             authorizationPassword: pass,

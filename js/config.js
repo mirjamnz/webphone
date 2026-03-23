@@ -14,6 +14,10 @@ export const CONFIG = {
         traceSip: true,
         register: true,
         hackIpInContact: false,
+        // --- Improve Registration Success Rate ---
+        hackAllowUnregisteredOptionTags: true, 
+        hackIpInContact: true, 
+        contactParams: { "transport": "ws" }, 
         // Standard ICE negotiation
         sessionDescriptionHandlerFactoryOptions: {
             peerConnectionConfiguration: {

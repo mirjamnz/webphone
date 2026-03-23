@@ -5,8 +5,8 @@ import { AudioManager } from './audio.js';
 import { PhoneEngine } from './phone.js';
 import { UserManager } from './user.js';
 import { QueueManager } from './queue.js';
-import { DashboardManager } from './dashboard.js?v=6';
-import { DashboardAgentPresence } from './dashboard-agent-presence.js?v=6';
+import { DashboardManager } from './dashboard.js?v=7';
+import { DashboardAgentPresence } from './dashboard-agent-presence.js?v=7';
 
 const settings = new SettingsManager();
 const userManager = new UserManager(settings);
@@ -46,6 +46,9 @@ const phoneCallbacks = {
         const ls = s ? s.toLowerCase() : "";
         ui.statusText.innerText = s;
         ui.statusDot.className = (ls === 'registered' || ls === 'connected') ? 'status-indicator connected' : 'status-indicator';
+        if (s === 'Registered') {
+            dashboardManager.refreshAgentPresence();
+        }
     },
     onIncoming: (c, a, r) => {
         document.getElementById('incomingIdentity').innerText = c;

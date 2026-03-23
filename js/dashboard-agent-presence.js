@@ -3,9 +3,13 @@
  * SIP SUBSCRIBE (presence) for supervisor Agents tab — BLF-style online/busy indicators.
  *
  * Use case: Show green “online” / busy / ringing per agent login (full SIP user), matching main BLF.
- * Last modified: 2026-03-25
+ * Staggers SUBSCRIBE so Kamailio is not hit with dozens of parallel dialogs (avoids 408 / poisoned WS).
+ * Last modified: 2026-03-24
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
+
+const SUBSCRIBE_STAGGER_MS = 110;
+const SUBSCRIBE_INITIAL_DELAY_MS = 200;
 
 function parsePidfPresence(xmlBody) {
     const parser = new DOMParser();
@@ -43,6 +47,20 @@ export class DashboardAgentPresence {
         this.subscriptions = new Map();
         this.stateByLogin = new Map();
         this._boundUa = null;
+        /** @type {Set<string>} */
+        this._currentWanted = new Set();
+        this._subscribeQueue = [];
+        this._subscribePumpTimer = null;
+        this._pumpRunning = false;
+    }
+
+    _clearSubscribePump() {
+        if (this._subscribePumpTimer) {
+            clearTimeout(this._subscribePumpTimer);
+            this._subscribePumpTimer = null;
+        }
+        this._subscribeQueue = [];
+        this._pumpRunning = false;
     }
 
     /**
@@ -56,24 +74,34 @@ export class DashboardAgentPresence {
         }
 
         const wanted = new Set();
-        for (const [, d] of agents) {
+        for (const [numKey, d] of agents) {
             if (!d || d.type !== 'agent') continue;
-            const login = String(d.extension != null ? d.extension : '').trim();
+            const login = String(numKey || d.extension || '').trim();
             if (login) wanted.add(login);
         }
+        this._currentWanted = wanted;
 
         for (const login of [...this.subscriptions.keys()]) {
             if (!wanted.has(login)) this._unsubscribeOne(login);
         }
 
-        if (!ua) {
+        const registered = this.phone?.lastKnownState === 'Registered';
+        if (!ua || !registered) {
+            this._clearSubscribePump();
+            for (const login of [...this.subscriptions.keys()]) {
+                this._unsubscribeOne(login);
+            }
             this.stateByLogin.clear();
+            const hint = !ua ? 'No line' : 'Not registered';
+            for (const login of wanted) {
+                this._paintRow(login, 'unknown', hint);
+            }
             return;
         }
 
         for (const login of wanted) {
             if (!this.subscriptions.has(login)) {
-                this._subscribe(login, ua);
+                this._enqueueSubscribe(login);
             }
         }
     }
@@ -94,10 +122,63 @@ export class DashboardAgentPresence {
             if (!login || this.stateByLogin.has(login)) return;
             if (!this.phone?.userAgent) {
                 this._paintRow(login, 'unknown', 'No line');
+            } else if (this.phone.lastKnownState !== 'Registered') {
+                this._paintRow(login, 'unknown', 'Not registered');
             } else {
                 this._paintRow(login, 'unknown', '…');
             }
         });
+    }
+
+    _enqueueSubscribe(login) {
+        if (this.subscriptions.has(login)) return;
+        if (this._subscribeQueue.includes(login)) return;
+        this._subscribeQueue.push(login);
+        this._startPumpIfNeeded();
+    }
+
+    _startPumpIfNeeded() {
+        if (this._pumpRunning) return;
+        this._pumpRunning = true;
+        const kick = () => {
+            this._subscribePumpTimer = null;
+            this._pumpStep();
+        };
+        this._subscribePumpTimer = setTimeout(kick, SUBSCRIBE_INITIAL_DELAY_MS);
+    }
+
+    _pumpStep() {
+        const ua = this.phone?.userAgent;
+        const registered = this.phone?.lastKnownState === 'Registered';
+        if (!ua || !registered || ua !== this._boundUa) {
+            this._clearSubscribePump();
+            return;
+        }
+
+        const login = this._subscribeQueue.shift();
+        if (!login) {
+            this._pumpRunning = false;
+            return;
+        }
+
+        if (!this._currentWanted.has(login)) {
+            if (this._subscribeQueue.length) {
+                this._subscribePumpTimer = setTimeout(() => this._pumpStep(), SUBSCRIBE_STAGGER_MS);
+            } else {
+                this._pumpRunning = false;
+            }
+            return;
+        }
+
+        if (!this.subscriptions.has(login)) {
+            this._subscribe(login, ua);
+        }
+
+        if (this._subscribeQueue.length) {
+            this._subscribePumpTimer = setTimeout(() => this._pumpStep(), SUBSCRIBE_STAGGER_MS);
+        } else {
+            this._pumpRunning = false;
+        }
     }
 
     _subscribe(login, userAgent) {
@@ -142,6 +223,7 @@ export class DashboardAgentPresence {
     }
 
     unsubscribeAll() {
+        this._clearSubscribePump();
         for (const login of [...this.subscriptions.keys()]) {
             this._unsubscribeOne(login);
         }

@@ -33,6 +33,8 @@ export class DashboardManager {
         this.wavesurfer = null;
         /** @type {import('./dashboard-agent-presence.js').DashboardAgentPresence | null} */
         this.agentPresence = null;
+        /** @type {Array<[string, object]> | null} last agents passed to renderAgentsList (for SIP resync after register) */
+        this._lastAgentTuples = null;
 
         this.ui = {
             stats: {
@@ -55,6 +57,13 @@ export class DashboardManager {
     /** @param {import('./dashboard-agent-presence.js').DashboardAgentPresence | null} controller */
     setAgentPresence(controller) {
         this.agentPresence = controller;
+    }
+
+    /** Re-run presence SUBSCRIBE after SIP reaches Registered (avoids waiting for next poll). */
+    refreshAgentPresence() {
+        if (!this._lastAgentTuples || !this.agentPresence) return;
+        this.agentPresence.syncSubscriptions(this._lastAgentTuples);
+        this.agentPresence.paintAllRows();
     }
 
     /** Resolve directory row by exact key or by extension / shortNumber (for live call legs using short ids). */
@@ -198,9 +207,11 @@ export class DashboardManager {
     renderAgentsList(agents) {
         const container = this.ui.lists.agents;
         if (!container) return;
+        this._lastAgentTuples = agents;
         container.innerHTML = agents.map(([number, data]) => {
             const displayName = escapeHtml(data.name || 'Agent');
-            const sipLogin = String(data.extension != null ? data.extension : number).trim();
+            // Prefer directory map key (canonical full login from phonebook merge) over extension field.
+            const sipLogin = String(number || data.extension || '').trim();
             const shortNum = data.shortNumber != null ? String(data.shortNumber).trim() : '';
             const extBlock = shortNum
                 ? `<div class="agent-meta"><span class="agent-label">Extension:</span> ${escapeHtml(shortNum)}</div>
