@@ -96,11 +96,9 @@ function sanitizeKamailioRegister2xxContact(raw, contactUserName, instanceUuid) 
     const expires =
         chosen.expires > 0 ? String(chosen.expires) : expHdr ? expHdr[1] : '120';
 
-    const inst =
-        instanceUuid != null && instanceUuid !== ''
-            ? `;+sip.instance="urn:uuid:${instanceUuid}"`
-            : '';
-    const replacement = `Contact: <sip:${chosen.userHost};transport=ws${inst}>;expires=${expires}`;
+    // Do not add +sip.instance with embedded quotes — SIP.js 0.21 Contact grammar can still fail.
+    // Registerer matches our binding via user@host (+ transport); instance was only used to pick the row.
+    const replacement = `Contact: <sip:${chosen.userHost};transport=ws>;expires=${expires}`;
     return raw.replace(/^Contact:\s*[^\r\n]+/im, replacement);
 }
 
@@ -279,8 +277,9 @@ export class PhoneEngine {
         };
 
         this.userAgent = new SIP.UserAgent(options);
-        await this.userAgent.start();
+        // Patch before start() so the first 401/200 REGISTER responses never hit an unpatched onMessage.
         this._patchTransportKamailioRegisterContact(this.userAgent, anonymousContactName, uuid);
+        await this.userAgent.start();
     }
 
     /**
@@ -295,6 +294,7 @@ export class PhoneEngine {
         const inner = transport.onMessage;
         if (typeof inner !== 'function') return;
         transport._kamailioRegisterContactPatched = true;
+        // Preserve arrow-function `this` from UserAgent (do not use inner.call(transport, …)).
         transport.onMessage = (msg) =>
             inner(sanitizeKamailioRegister2xxContact(msg, contactUserName, instanceUuid));
     }
