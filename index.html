@@ -51,16 +51,18 @@
 
     <div class="panel sidebar">
         <div class="sidebar-header sidebar-header--enhanced">
-            <div class="header-brand">
-                <div class="header-brand-row">
-                    <span id="regStatusIcon" class="reg-status-icon reg-status--bad" role="img" title="Offline" aria-label="Offline">
-                        <i class="fa-solid fa-user"></i>
-                    </span>
-                    <img src="public/images/Hero_logo.png" alt="Hero" class="brand-logo-small">
-                </div>
-                <h3 id="agentPanelTitle">Agent Panel</h3>
+            <div class="header-brand-group">
+                <span id="regStatusIcon" class="reg-status-icon reg-status--bad" role="img" title="Offline" aria-label="Offline">
+                    <i class="fa-solid fa-circle"></i>
+                </span>
+                <img src="public/images/Hero_logo.png" alt="Hero" class="brand-logo-small">
             </div>
-            <div class="header-toolbar">
+
+            <div id="agentPanelTitle" class="header-agent-info">
+                <span class="agent-name">Agent Panel</span>
+            </div>
+
+            <div class="header-toolbar-horizontal">
                 <button type="button" class="config-btn" id="btnLogin" title="Reconnect SIP">
                     <i class="fa-solid fa-rotate"></i>
                 </button>
@@ -241,7 +243,7 @@
 
 </div>
 
-<script type="module" src="js/app.js?v=24"></script>
+<script type="module" src="js/app.js?v=25"></script>
 
 </body>
 </html>

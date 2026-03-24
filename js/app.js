@@ -231,56 +231,35 @@ async function refreshAgentIdentityFromApi() {
     }
 }
 
-/** Sidebar header: phonebook display name, else CLI, else extension (use case: human-readable agent id). */
+/** Sidebar header: single-line — Name (Ext: 3001); DOM-only to avoid HTML injection. */
 function syncAgentPanelTitle() {
     const titleEl = document.getElementById('agentPanelTitle');
     if (!titleEl) return;
     const user = settings.get('username');
     if (!user) {
-        titleEl.textContent = 'Agent Panel';
-        titleEl.style.display = '';
+        titleEl.replaceChildren();
+        const fallback = document.createElement('span');
+        fallback.className = 'agent-name';
+        fallback.textContent = 'Agent Panel';
+        titleEl.append(fallback);
         return;
     }
 
     const namePb = (userManager.profile.name || '').trim();
     const cliPb = (userManager.profile.cli || '').trim();
-    const primary = namePb || cliPb || user;
+    const primaryName = namePb || cliPb || 'Agent';
 
     titleEl.replaceChildren();
-    titleEl.style.display = 'flex';
-    titleEl.style.flexDirection = 'column';
-    titleEl.style.alignItems = 'flex-start';
-    titleEl.style.gap = '2px';
-    titleEl.style.margin = '0';
-    titleEl.style.fontWeight = '600';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'agent-name';
+    nameSpan.title = primaryName;
+    nameSpan.textContent = primaryName;
 
-    const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.lineHeight = '1.2';
-    row.style.fontSize = '0.95rem';
+    const extSpan = document.createElement('span');
+    extSpan.className = 'agent-ext';
+    extSpan.textContent = `(Ext: ${user})`;
 
-    const icon = document.createElement('i');
-    icon.className = 'fa-solid fa-user-tie';
-    icon.style.marginRight = '8px';
-    icon.style.flexShrink = '0';
-    row.append(icon, document.createTextNode(primary));
-
-    titleEl.append(row);
-
-    if (namePb || cliPb) {
-        const bits = [];
-        if (cliPb) bits.push(`CLI ${cliPb}`);
-        bits.push(`Ext ${user}`);
-        const sub = document.createElement('div');
-        sub.style.fontSize = '0.72rem';
-        sub.style.fontWeight = '400';
-        sub.style.color = 'var(--text-muted)';
-        sub.style.lineHeight = '1.2';
-        sub.style.paddingLeft = 'calc(0.95rem + 8px)';
-        sub.textContent = bits.join(' · ');
-        titleEl.append(sub);
-    }
+    titleEl.append(nameSpan, extSpan);
 }
 
 window.app = {

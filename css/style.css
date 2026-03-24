@@ -132,52 +132,76 @@ body {
 .sidebar-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
+    align-items: center;
     margin-bottom: 20px;
     padding-bottom: 15px;
     border-bottom: 1px solid var(--border);
+    min-height: 40px;
 }
 
-.sidebar-header--enhanced .header-brand {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    flex: 1;
-    min-width: 0;
-}
-
-.header-brand-row {
+.header-brand-group {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    flex-shrink: 0;
 }
 
 .reg-status-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
-    flex-shrink: 0;
-    font-size: 1rem;
-    transition: color 0.2s ease;
+    font-size: 0.65rem;
+    transition: color 0.2s ease, text-shadow 0.2s ease;
 }
 
 .reg-status-icon.reg-status--ok {
     color: #2ecc71;
+    text-shadow: 0 0 8px rgba(46, 204, 113, 0.5);
 }
 
 .reg-status-icon.reg-status--bad {
     color: #e74c3c;
+    text-shadow: 0 0 8px rgba(231, 76, 60, 0.5);
 }
 
 .reg-status-icon.reg-status--pending {
     color: #f39c12;
+    animation: blink-animation 1s infinite;
 }
 
-.header-toolbar {
+.brand-logo-small {
+    height: 24px;
+    width: auto;
+    object-fit: contain;
+}
+
+.header-agent-info {
+    flex: 1;
     display: flex;
-    flex-direction: column;
+    align-items: baseline;
+    gap: 6px;
+    padding: 0 12px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.agent-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-main);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.agent-ext {
+    font-size: 0.8rem;
+    font-family: monospace;
+    color: var(--text-muted);
+}
+
+.header-toolbar-horizontal {
+    display: flex;
+    align-items: center;
     gap: 6px;
     flex-shrink: 0;
 }
@@ -234,18 +258,6 @@ body {
     flex-wrap: wrap;
     gap: 8px;
     justify-content: flex-end;
-}
-
-.header-brand {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.brand-logo-small {
-    height: 32px;
-    width: auto;
-    object-fit: contain;
 }
 
 .config-btn {
