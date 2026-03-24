@@ -1,6 +1,6 @@
 /**
  * Live supervisor dashboard (active calls, directory-driven Agents/Queues, recordings).
- * Last modified: 2026-03-24 — dynamic stats row (4 cards); queue cards with inline agent pills.
+ * Last modified: 2026-03-24 — agents + recordings rows match queue dark-card style.
  */
 
 import { resolveAgentSipTargets } from './agent-sip-targets.js';
@@ -307,27 +307,27 @@ export class DashboardManager {
 
             const isOnline = isAgentOnlineInHeroMap(onlineDict, number, data);
 
-            const stateClass = !heroEnabled ? 'state-unknown' : isOnline ? 'state-available' : 'state-offline';
             const stateLabel = !heroEnabled ? '…' : isOnline ? 'Online' : 'Offline';
-
-            const shortNum = data.shortNumber != null ? String(data.shortNumber).trim() : '';
-            const extBlock =
-                shortNum && presenceUser && shortNum !== presenceUser
-                    ? `<div class="agent-meta"><span class="agent-label">Extension:</span> ${escapeHtml(dialUser)}</div>
-                       <div class="agent-meta subtle"><span class="agent-label">Login:</span> ${escapeHtml(presenceUser)}</div>`
-                    : `<div class="agent-meta"><span class="agent-label">Extension:</span> ${escapeHtml(dialUser || presenceUser)}</div>`;
+            const dotColor = !heroEnabled ? '#f1c40f' : isOnline ? '#2ecc71' : '#e74c3c';
+            const rowOpacity = isOnline ? '1' : '0.6';
 
             return `
-            <div class="supervisor-agent-item" data-sip-login="${escapeAttr(presenceUser)}">
-                <div class="dashboard-agent-status ${stateClass}" title="Presence">
-                    <span class="dashboard-agent-status-dot" aria-hidden="true"></span>
-                    <span class="dashboard-agent-status-label">${stateLabel}</span>
+            <div data-sip-login="${escapeAttr(presenceUser)}" style="background: #1e2129; border-radius: 8px; margin-bottom: 8px; border: 1px solid #2a2e39; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; transition: all 0.2s ease; opacity: ${rowOpacity};">
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <span style="display:inline-flex; align-items:center; font-size:0.75rem; background:rgba(255,255,255,0.05); padding:6px 12px; border-radius:12px; color: white; border: 1px solid rgba(255,255,255,0.1); width: 80px; justify-content: flex-start;">
+                        <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${dotColor}; margin-right:8px;"></span>
+                        ${stateLabel}
+                    </span>
+                    
+                    <div>
+                        <div style="font-size: 1rem; font-weight: 600; color: #ffffff; margin-bottom: 2px;">${displayName}</div>
+                        <div style="font-size: 0.8rem; color: #8b949e; font-family: monospace;">
+                            Ext: ${escapeHtml(dialUser)} ${presenceUser !== dialUser ? `<span style="opacity:0.5; margin:0 4px;">|</span> Login: ${escapeHtml(presenceUser)}` : ''}
+                        </div>
+                    </div>
                 </div>
-                <div class="agent-info">
-                    <span class="agent-extension" title="Display name">${displayName}</span>
-                    ${extBlock}
-                </div>
-                <button type="button" class="btn-icon-only agent-dash-call-btn" data-dial="${escapeAttr(dialUser)}" title="Call this agent">
+                
+                <button type="button" class="agent-dash-call-btn" data-dial="${escapeAttr(dialUser)}" title="Call this agent" style="background: rgba(52, 152, 219, 0.1); color: #3498db; border: 1px solid rgba(52, 152, 219, 0.2); border-radius: 6px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.2s;">
                     <i class="fa-solid fa-phone"></i>
                 </button>
             </div>`;
@@ -435,21 +435,13 @@ export class DashboardManager {
             const cr = this.resolveDirectoryEntry(r.caller_number);
             const ce = this.resolveDirectoryEntry(r.callee_number);
             const hay = [
-                r.caller_number,
-                r.callee_number,
-                cr?.name,
-                ce?.name,
-                cr?.extension,
-                ce?.extension
-            ]
-                .filter(Boolean)
-                .join(' ')
-                .toLowerCase();
+                r.caller_number, r.callee_number, cr?.name, ce?.name, cr?.extension, ce?.extension
+            ].filter(Boolean).join(' ').toLowerCase();
             return hay.includes(filter);
         });
 
         if (filtered.length === 0) {
-            container.innerHTML = `<div class="empty-state">${filter ? 'No matching names or numbers' : 'No recordings found'}</div>`;
+            container.innerHTML = `<div style="padding: 24px; text-align: center; color: #8b949e; font-size: 0.9rem;">${filter ? 'No matching names or numbers' : 'No recordings found'}</div>`;
             return;
         }
 
@@ -457,23 +449,30 @@ export class DashboardManager {
             const dateStr = new Date(r.ended_at).toLocaleString();
             const cr = this.resolveDirectoryEntry(r.caller_number);
             const ce = this.resolveDirectoryEntry(r.callee_number);
-            const callerPlain = cr
-                ? `${cr.name} (${r.caller_number})`
-                : String(r.caller_number ?? '');
-            const calleePlain = ce
-                ? `${ce.name} (${r.callee_number})`
-                : String(r.callee_number ?? '');
+            const callerPlain = cr ? `${cr.name} (${r.caller_number})` : String(r.caller_number ?? '');
+            const calleePlain = ce ? `${ce.name} (${r.callee_number})` : String(r.callee_number ?? '');
             const lineTitle = `${callerPlain} → ${calleePlain}`;
-            const url = decodeURIComponent(r.recording_url);
+            let url;
+            try {
+                url = decodeURIComponent(r.recording_url);
+            } catch {
+                url = r.recording_url;
+            }
 
             return `
-            <div class="recording-item" style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid rgba(255,255,255,0.05);">
-                <div class="recording-info">
-                    <div style="font-weight:600; color:white;">${escapeHtml(lineTitle)}</div>
-                    <div style="font-size:0.75rem; color:var(--text-muted);">${escapeHtml(dateStr)} | ${escapeHtml(String(r.duration))}s</div>
+            <div style="background: #1e2129; border-radius: 8px; margin-bottom: 8px; border: 1px solid #2a2e39; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; transition: all 0.2s ease;">
+                <div>
+                    <div style="font-size: 1rem; font-weight: 600; color: #ffffff; margin-bottom: 4px;">
+                        <i class="fa-solid fa-phone-volume" style="font-size:0.8rem; color:#3498db; margin-right:8px;"></i>${escapeHtml(lineTitle)}
+                    </div>
+                    <div style="font-size: 0.8rem; color: #8b949e; display: flex; gap: 16px; align-items: center;">
+                        <span><i class="fa-regular fa-calendar" style="margin-right: 4px;"></i> ${escapeHtml(dateStr)}</span>
+                        <span><i class="fa-solid fa-stopwatch" style="margin-right: 4px;"></i> ${escapeHtml(String(r.duration))}s</span>
+                    </div>
                 </div>
-                <button type="button" class="btn-play-circle rec-play-btn" data-rec-url="${encodeURIComponent(url)}" data-rec-title="${escapeAttr(lineTitle)}" data-rec-date="${escapeAttr(dateStr)}">
-                    <i class="fa-solid fa-play"></i>
+                
+                <button type="button" class="rec-play-btn" data-rec-url="${encodeURIComponent(url)}" data-rec-title="${escapeAttr(lineTitle)}" data-rec-date="${escapeAttr(dateStr)}" style="background: rgba(46, 204, 113, 0.1); color: #2ecc71; border: 1px solid rgba(46, 204, 113, 0.2); border-radius: 6px; padding: 8px 16px; cursor: pointer; font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; transition: background 0.2s;">
+                    <i class="fa-solid fa-play"></i> Listen
                 </button>
             </div>`;
         }).join('');
