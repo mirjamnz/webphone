@@ -198,24 +198,28 @@ export class DashboardManager {
         } catch (e) { console.error("Dashboard Sync Error:", e); }
     }
 
-    render(data) {
-        const calls = data.calls || [];
-        const active = calls.filter(c => c.status === 'answered');
-        const queuedCalls = calls.filter(c => c.status === 'ringing');
+    /** @param {Record<string, unknown>} [data] live-status JSON (defaults if omitted between polls) */
+    render(data = {}) {
+        const calls = Array.isArray(data.calls) ? data.calls : [];
+        const active = calls.filter((c) => c.status === 'answered');
+        const queuedCalls = calls.filter((c) => c.status === 'ringing');
         const onlineDict = parseSubscriberOnlineDict(data.subscriberStatus);
+
         const agents = Object.entries(this.directory)
-            .filter(([, d]) => d.type === 'agent')
+            .filter(([, d]) => d && d.type === 'agent')
             .sort((a, b) => {
                 const aOn = isAgentOnlineInHeroMap(onlineDict, a[0], a[1]);
                 const bOn = isAgentOnlineInHeroMap(onlineDict, b[0], b[1]);
                 if (aOn !== bOn) return aOn ? -1 : 1;
                 return (a[1].name || '').localeCompare(b[1].name || '', undefined, { sensitivity: 'base' });
             });
-        const queuesDir = Object.entries(this.directory).filter(([num, d]) => d.type === 'queue');
 
-        if (this.ui.stats.active) this.ui.stats.active.innerText = active.length;
-        if (this.ui.stats.queues) this.ui.stats.queues.innerText = queuedCalls.length;
-        if (this.ui.stats.agents) this.ui.stats.agents.innerText = agents.length;
+        const queuesDir = Object.entries(this.directory).filter(([num, d]) => d && d.type === 'queue');
+
+        if (this.ui.stats.active) this.ui.stats.active.innerText = String(active.length);
+        if (this.ui.stats.agents) this.ui.stats.agents.innerText = String(agents.length);
+        // Label is "Queues" → count configured queue entries in directory (not waiting calls, not agents).
+        if (this.ui.stats.queues) this.ui.stats.queues.innerText = String(queuesDir.length);
 
         this.renderCallsList(active);
         this.renderAgentsList(agents, data.subscriberStatus);
@@ -296,6 +300,12 @@ export class DashboardManager {
         if (!container) return;
 
         const onlineDict = parseSubscriberOnlineDict(subscriberStatus);
+
+        if (!queues.length) {
+            container.innerHTML =
+                '<div class="empty-state">No queues in directory (check phonebook: name or type must identify queues).</div>';
+            return;
+        }
 
         container.innerHTML = queues.map(([number, data]) => {
             const ext = data.extension != null ? String(data.extension) : number;

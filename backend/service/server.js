@@ -238,7 +238,11 @@ async function updatePhonebook() {
                     const attr = c.$;
                     const name = (attr.name || '').trim();
                     if (!name) return;
-                    const type = name.includes('Queue') ? 'queue' : 'agent';
+                    const typeAttr = (attr.type || attr.contacttype || attr.contact_type || '').trim().toLowerCase();
+                    const isQueue =
+                        typeAttr === 'queue' ||
+                        name.toLowerCase().includes('queue');
+                    const type = isQueue ? 'queue' : 'agent';
                     const phone = attr.phone ? String(attr.phone).trim() : '';
                     const num = attr.number ? String(attr.number).trim() : '';
                     const loginAttr = attr.login ? String(attr.login).trim() : '';
