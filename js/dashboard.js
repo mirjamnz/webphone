@@ -1,9 +1,9 @@
 /**
  * Live supervisor dashboard (active calls, directory-driven Agents/Queues, recordings).
- * Last modified: 2026-03-24 — data-hero-probe for Hero subscriberStatus key matching.
+ * Last modified: 2026-03-24 — agent presence from Hero subscriberStatus only (no SIP SUBSCRIBE on dashboard).
  */
 
-import { resolveAgentSipTargets, subscriberStatusProbeIds } from './agent-sip-targets.js';
+import { resolveAgentSipTargets } from './agent-sip-targets.js';
 
 function escapeHtml(s) {
     if (s == null) return '';
@@ -33,10 +33,6 @@ export class DashboardManager {
         this.directory = {};
         this.allRecordings = [];
         this.wavesurfer = null;
-        /** @type {import('./dashboard-agent-presence.js').DashboardAgentPresence | null} */
-        this.agentPresence = null;
-        /** @type {Array<[string, object]> | null} last agents passed to renderAgentsList (for SIP resync after register) */
-        this._lastAgentTuples = null;
 
         this.ui = {
             stats: {
@@ -54,18 +50,6 @@ export class DashboardManager {
 
         this.initWaveSurfer();
         this.initModalListeners();
-    }
-
-    /** @param {import('./dashboard-agent-presence.js').DashboardAgentPresence | null} controller */
-    setAgentPresence(controller) {
-        this.agentPresence = controller;
-    }
-
-    /** Re-run presence SUBSCRIBE after SIP reaches Registered (avoids waiting for next poll). */
-    refreshAgentPresence() {
-        if (!this._lastAgentTuples || !this.agentPresence) return;
-        this.agentPresence.syncSubscriptions(this._lastAgentTuples);
-        this.agentPresence.paintAllRows();
     }
 
     /** Resolve directory row by exact key or by extension / shortNumber (for live call legs using short ids). */
@@ -208,28 +192,51 @@ export class DashboardManager {
 
     /**
      * @param {Array<[string, object]>} agents
-     * @param {Record<string, string>|null|undefined} subscriberStatus - from Hero Get-Subscriber-Status Data (omit if API disabled)
+     * @param {Record<string, string>|null|undefined} subscriberStatus - from Hero Get-Subscriber-Status Data
      */
     renderAgentsList(agents, subscriberStatus) {
         const container = this.ui.lists.agents;
         if (!container) return;
-        this._lastAgentTuples = agents;
+
+        const heroOn = (map, key) => {
+            if (map == null || key == null || key === '') return false;
+            const v = map[key];
+            return v === '1' || v === 1;
+        };
+
         container.innerHTML = agents.map(([number, data]) => {
             const displayName = escapeHtml(data.name || 'Agent');
             const { presenceUser, dialUser } = resolveAgentSipTargets(number, data);
-            const heroProbeCsv = subscriberStatusProbeIds(number, data).join(',');
+
+            let isOnline = false;
+            if (subscriberStatus && typeof subscriberStatus === 'object') {
+                const authLogin = data.authLogin != null ? String(data.authLogin).trim() : '';
+                const callerId = data.callerId != null ? String(data.callerId).trim() : '';
+                isOnline =
+                    heroOn(subscriberStatus, number) ||
+                    heroOn(subscriberStatus, data.extension) ||
+                    heroOn(subscriberStatus, data.shortNumber) ||
+                    heroOn(subscriberStatus, authLogin) ||
+                    heroOn(subscriberStatus, callerId) ||
+                    heroOn(subscriberStatus, presenceUser);
+            }
+
+            const heroEnabled = subscriberStatus != null && typeof subscriberStatus === 'object';
+            const stateClass = !heroEnabled ? 'state-unknown' : isOnline ? 'state-available' : 'state-offline';
+            const stateLabel = !heroEnabled ? '…' : isOnline ? 'Online' : 'Offline';
+
             const shortNum = data.shortNumber != null ? String(data.shortNumber).trim() : '';
             const extBlock =
                 shortNum && presenceUser && shortNum !== presenceUser
                     ? `<div class="agent-meta"><span class="agent-label">Extension:</span> ${escapeHtml(shortNum)}</div>
-                   <div class="agent-meta subtle"><span class="agent-label">Login:</span> ${escapeHtml(presenceUser)}</div>`
+                       <div class="agent-meta subtle"><span class="agent-label">Login:</span> ${escapeHtml(presenceUser)}</div>`
                     : `<div class="agent-meta"><span class="agent-label">Extension:</span> ${escapeHtml(dialUser || presenceUser)}</div>`;
 
             return `
-            <div class="supervisor-agent-item" data-sip-login="${escapeAttr(presenceUser)}" data-hero-probe="${escapeAttr(heroProbeCsv)}">
-                <div class="dashboard-agent-status state-unknown" title="Presence">
+            <div class="supervisor-agent-item" data-sip-login="${escapeAttr(presenceUser)}">
+                <div class="dashboard-agent-status ${stateClass}" title="Presence">
                     <span class="dashboard-agent-status-dot" aria-hidden="true"></span>
-                    <span class="dashboard-agent-status-label">…</span>
+                    <span class="dashboard-agent-status-label">${stateLabel}</span>
                 </div>
                 <div class="agent-info">
                     <span class="agent-extension" title="Display name">${displayName}</span>
@@ -240,10 +247,6 @@ export class DashboardManager {
                 </button>
             </div>`;
         }).join('');
-
-        this.agentPresence?.setHeroSubscriberStatus(subscriberStatus);
-        this.agentPresence?.syncSubscriptions(agents);
-        this.agentPresence?.paintAllRows();
     }
 
     renderQueuesList(queues, queuedCalls) {

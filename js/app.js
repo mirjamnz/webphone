@@ -5,8 +5,7 @@ import { AudioManager } from './audio.js';
 import { PhoneEngine } from './phone.js';
 import { UserManager } from './user.js';
 import { QueueManager } from './queue.js';
-import { DashboardManager } from './dashboard.js?v=13';
-import { DashboardAgentPresence } from './dashboard-agent-presence.js?v=13';
+import { DashboardManager } from './dashboard.js?v=14';
 
 const settings = new SettingsManager();
 const userManager = new UserManager(settings);
@@ -46,9 +45,6 @@ const phoneCallbacks = {
         const ls = s ? s.toLowerCase() : "";
         ui.statusText.innerText = s;
         ui.statusDot.className = (ls === 'registered' || ls === 'connected') ? 'status-indicator connected' : 'status-indicator';
-        if (s === 'Registered') {
-            dashboardManager.refreshAgentPresence();
-        }
     },
     onIncoming: (c, a, r) => {
         document.getElementById('incomingIdentity').innerText = c;
@@ -68,14 +64,6 @@ const phoneCallbacks = {
 };
 
 const phone = new PhoneEngine(CONFIG, settings, audio, phoneCallbacks);
-const dashboardAgentPresence = new DashboardAgentPresence(phone, settings);
-if (typeof dashboardManager.setAgentPresence === 'function') {
-    dashboardManager.setAgentPresence(dashboardAgentPresence);
-} else {
-    console.warn(
-        '[Hero Phone] Cached dashboard.js is stale; use hard reload (Cmd+Shift+R). Agent BLF status disabled until then.'
-    );
-}
 
 window.app = {
     dashboard: dashboardManager,
