@@ -35,17 +35,109 @@ const ui = {
         controls: document.getElementById('controlsBar'),
         history: document.getElementById('historyModal')
     },
-    statusDot: document.getElementById('statusDot'),
-    statusText: document.getElementById('statusText'),
     btnCall: document.getElementById('btnCall')
 };
 
+/** Registration LED beside Hero logo: green = registered, amber = WS up, red = offline. */
+function syncRegistrationChrome(statusLabel) {
+    const icon = document.getElementById('regStatusIcon');
+    if (!icon) return;
+    const label = statusLabel || 'Offline';
+    const ls = label.toLowerCase();
+    icon.classList.remove('reg-status--ok', 'reg-status--pending', 'reg-status--bad');
+    icon.setAttribute('title', label);
+    icon.setAttribute('aria-label', label);
+    if (ls === 'registered') {
+        icon.classList.add('reg-status--ok');
+    } else if (ls === 'connected') {
+        icon.classList.add('reg-status--pending');
+    } else {
+        icon.classList.add('reg-status--bad');
+    }
+}
+
+function resetCallControlButtons() {
+    const mute = document.getElementById('btnMute');
+    const hold = document.getElementById('btnHold');
+    if (mute) {
+        mute.classList.remove('active');
+        const ic = mute.querySelector('i');
+        if (ic) ic.className = 'fa-solid fa-microphone';
+    }
+    if (hold) hold.classList.remove('active');
+    closeTransferSheet();
+}
+
+function closeTransferSheet() {
+    const sheet = document.getElementById('sidebarTransferSheet');
+    if (sheet) {
+        sheet.classList.add('hidden');
+        sheet.setAttribute('aria-hidden', 'true');
+    }
+}
+
+/** @type {'blind' | 'attended' | 'notice'} */
+let transferSheetMode = 'blind';
+
+function openBlindTransferSheet() {
+    transferSheetMode = 'blind';
+    const sheet = document.getElementById('sidebarTransferSheet');
+    const title = document.getElementById('sidebarSheetTitle');
+    const field = document.getElementById('sidebarSheetField');
+    const msg = document.getElementById('sidebarSheetMessage');
+    const confirm = document.getElementById('transferSheetConfirm');
+    const input = document.getElementById('transferDestInput');
+    if (!sheet || !title || !field || !msg || !confirm || !input) return;
+    title.textContent = 'Blind transfer';
+    field.classList.remove('hidden');
+    msg.classList.add('hidden');
+    msg.textContent = '';
+    confirm.textContent = 'Transfer';
+    input.value = '';
+    sheet.classList.remove('hidden');
+    sheet.setAttribute('aria-hidden', 'false');
+    setTimeout(() => input.focus(), 50);
+}
+
+function openAttendedTransferInfoSheet() {
+    transferSheetMode = 'attended';
+    const sheet = document.getElementById('sidebarTransferSheet');
+    const title = document.getElementById('sidebarSheetTitle');
+    const field = document.getElementById('sidebarSheetField');
+    const msg = document.getElementById('sidebarSheetMessage');
+    const confirm = document.getElementById('transferSheetConfirm');
+    if (!sheet || !title || !field || !msg || !confirm) return;
+    title.textContent = 'Attended transfer';
+    field.classList.add('hidden');
+    msg.textContent =
+        'Dial the third party from the keypad first and wait for an answer, then complete the transfer from your desk phone or PBX feature codes if available. This client supports blind transfer (REFER) from the arrow button.';
+    msg.classList.remove('hidden');
+    confirm.textContent = 'Got it';
+    sheet.classList.remove('hidden');
+    sheet.setAttribute('aria-hidden', 'false');
+}
+
+function openTransferNoticeSheet(line) {
+    transferSheetMode = 'notice';
+    const sheet = document.getElementById('sidebarTransferSheet');
+    const title = document.getElementById('sidebarSheetTitle');
+    const field = document.getElementById('sidebarSheetField');
+    const msg = document.getElementById('sidebarSheetMessage');
+    const confirm = document.getElementById('transferSheetConfirm');
+    if (!sheet || !title || !field || !msg || !confirm) return;
+    title.textContent = 'Transfer';
+    field.classList.add('hidden');
+    msg.textContent = line;
+    msg.classList.remove('hidden');
+    confirm.textContent = 'OK';
+    sheet.classList.remove('hidden');
+    sheet.setAttribute('aria-hidden', 'false');
+}
+
 const phoneCallbacks = {
     onStatus: (s) => {
-        const ls = s ? s.toLowerCase() : "";
-        ui.statusText.innerText = s;
-        ui.statusDot.className = (ls === 'registered' || ls === 'connected') ? 'status-indicator connected' : 'status-indicator';
-        if (ls === 'registered') {
+        syncRegistrationChrome(s);
+        if (String(s).toLowerCase() === 'registered') {
             void refreshAgentIdentityFromApi().then(() => syncAgentPanelTitle());
         }
     },
@@ -57,13 +149,20 @@ const phoneCallbacks = {
         document.getElementById('btnReject').onclick = () => { r(); ui.panels.incoming.classList.add('hidden'); audio.stopRinging(); };
     },
     onCallStart: (rem) => {
+        resetCallControlButtons();
         ui.panels.idle.classList.add('hidden');
         ui.panels.active.classList.remove('hidden');
         ui.panels.controls.classList.add('active');
         document.getElementById('remoteIdentity').innerText = rem || "Unknown";
         startTimer();
     },
-    onCallEnd: () => { ui.panels.active.classList.add('hidden'); ui.panels.idle.classList.remove('hidden'); ui.panels.controls.classList.remove('active'); stopTimer(); }
+    onCallEnd: () => {
+        ui.panels.active.classList.add('hidden');
+        ui.panels.idle.classList.remove('hidden');
+        ui.panels.controls.classList.remove('active');
+        stopTimer();
+        resetCallControlButtons();
+    }
 };
 
 const phone = new PhoneEngine(CONFIG, settings, audio, phoneCallbacks);
@@ -285,30 +384,73 @@ function attachEvents() {
         } catch (e) { alert("Mic access denied."); }
     };
     document.getElementById('btnHangup').onclick = () => phone.hangup();
-    document.getElementById('btnMute').onclick = function() { this.classList.toggle('active', phone.toggleMute()); };
-    document.getElementById('btnHold').onclick = async function() { this.classList.toggle('active', await phone.toggleHold()); };
+
+    const btnLogin = document.getElementById('btnLogin');
+    if (btnLogin) {
+        btnLogin.onclick = () => {
+            void phone.connect();
+        };
+    }
+
+    document.getElementById('btnMute').onclick = function () {
+        const muted = phone.toggleMute();
+        this.classList.toggle('active', muted);
+        const ic = this.querySelector('i');
+        if (ic) ic.className = muted ? 'fa-solid fa-microphone-slash' : 'fa-solid fa-microphone';
+    };
+
+    document.getElementById('btnHold').onclick = async function () {
+        const onHold = await phone.toggleHold();
+        this.classList.toggle('active', onHold);
+    };
 
     const btnBlind = document.getElementById('btnTransferBlind');
     if (btnBlind) {
         btnBlind.onclick = () => {
             if (!phone.isCallActive()) {
-                alert('No active call to transfer.');
+                openTransferNoticeSheet('No active call to transfer.');
                 return;
             }
-            const num = window.prompt('Blind transfer to extension or number:', '');
-            if (num == null || String(num).trim() === '') return;
-            if (!phone.blindTransfer(num.trim())) {
-                alert('Transfer could not be started. Check console for details.');
-            }
+            openBlindTransferSheet();
         };
     }
     const btnAtt = document.getElementById('btnTransferAttended');
     if (btnAtt) {
-        btnAtt.onclick = () => {
-            alert(
-                'Attended transfer: place a consultation call to the third party from the dialpad, then complete the transfer from your desk phone or PBX feature codes if available. This Web client currently supports blind transfer (phone-arrow button) via SIP REFER.'
-            );
+        btnAtt.onclick = () => openAttendedTransferInfoSheet();
+    }
+
+    const transferConfirm = document.getElementById('transferSheetConfirm');
+    const transferCancel = document.getElementById('transferSheetCancel');
+    const transferInput = document.getElementById('transferDestInput');
+    if (transferConfirm) {
+        transferConfirm.onclick = () => {
+            if (transferSheetMode === 'blind') {
+                const num = transferInput?.value?.trim();
+                if (!num) return;
+                if (!phone.blindTransfer(num)) {
+                    const msg = document.getElementById('sidebarSheetMessage');
+                    if (msg) {
+                        msg.textContent = 'Transfer failed — check the destination or console.';
+                        msg.classList.remove('hidden');
+                    }
+                    return;
+                }
+                closeTransferSheet();
+                return;
+            }
+            closeTransferSheet();
         };
+    }
+    if (transferCancel) {
+        transferCancel.onclick = () => closeTransferSheet();
+    }
+    if (transferInput) {
+        transferInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && transferSheetMode === 'blind') {
+                e.preventDefault();
+                transferConfirm?.click();
+            }
+        });
     }
     document.getElementById('btnShowConfig').onclick = () => {
         ui.inputs.user.value = settings.get('username');
@@ -347,6 +489,7 @@ function attachEvents() {
 async function bootstrap() {
     attachEvents();
     setupTabs();
+    syncRegistrationChrome('Offline');
 
     // Module + imports can load after DOMContentLoaded; do not rely on that event alone.
     syncLoginServerFields({ force: true });

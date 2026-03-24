@@ -50,14 +50,24 @@
 <div id="mainApp" class="app-container hidden">
 
     <div class="panel sidebar">
-        <div class="sidebar-header">
+        <div class="sidebar-header sidebar-header--enhanced">
             <div class="header-brand">
-                <img src="public/images/Hero_logo.png" alt="Hero" class="brand-logo-small">
+                <div class="header-brand-row">
+                    <span id="regStatusIcon" class="reg-status-icon reg-status--bad" role="img" title="Offline" aria-label="Offline">
+                        <i class="fa-solid fa-user"></i>
+                    </span>
+                    <img src="public/images/Hero_logo.png" alt="Hero" class="brand-logo-small">
+                </div>
                 <h3 id="agentPanelTitle">Agent Panel</h3>
             </div>
-            <button class="config-btn" id="btnShowConfig" title="SIP Settings">
-                <i class="fa-solid fa-gear"></i>
-            </button>
+            <div class="header-toolbar">
+                <button type="button" class="config-btn" id="btnLogin" title="Reconnect SIP">
+                    <i class="fa-solid fa-rotate"></i>
+                </button>
+                <button type="button" class="config-btn" id="btnShowConfig" title="SIP Settings">
+                    <i class="fa-solid fa-gear"></i>
+                </button>
+            </div>
         </div>
 
         <div class="dial-input-group">
@@ -73,23 +83,6 @@
             </label>
         </div>
 
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 0 5px;">
-            <div style="font-size: 0.8rem; color: var(--text-muted);"><i class="fa-solid fa-users"></i> COLLEAGUES</div>
-            <button id="btnBlfConfig" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:0.8rem;">Edit</button>
-        </div>
-
-        <div id="blfGrid" class="blf-grid"></div>
-
-        <div class="status-card">
-            <div>
-                <span id="statusDot" class="status-indicator"></span>
-                <span id="statusText" style="font-size: 0.9rem; color: var(--text-muted)">Offline</span>
-            </div>
-            <button id="btnLogin" class="btn btn-primary" style="padding: 5px 10px; font-size: 0.8rem;">
-                <i class="fa-solid fa-rotate"></i> Reconnect
-            </button>
-        </div>
-
         <div class="dial-pad">
             <button class="digit-btn" data-digit="1">1</button><button class="digit-btn" data-digit="2">2</button><button class="digit-btn" data-digit="3">3</button>
             <button class="digit-btn" data-digit="4">4</button><button class="digit-btn" data-digit="5">5</button><button class="digit-btn" data-digit="6">6</button>
@@ -103,6 +96,18 @@
             <button class="btn btn-danger" onclick="app.callSpecial('*46')">Q-Out</button>
         </div>
 
+        <div id="sidebarTransferSheet" class="sidebar-transfer-sheet hidden" aria-hidden="true">
+            <p id="sidebarSheetTitle" class="sidebar-transfer-sheet__title"></p>
+            <div id="sidebarSheetField" class="sidebar-transfer-sheet__field">
+                <input type="text" id="transferDestInput" class="sidebar-transfer-sheet__input" placeholder="Extension or number" autocomplete="off">
+            </div>
+            <p id="sidebarSheetMessage" class="sidebar-transfer-sheet__msg hidden"></p>
+            <div class="sidebar-transfer-sheet__actions">
+                <button type="button" id="transferSheetConfirm" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.8rem;">Transfer</button>
+                <button type="button" id="transferSheetCancel" class="btn" style="padding: 6px 14px; font-size: 0.8rem; background: #2a2e39; color: #fff; border: 1px solid #3d4450;">Cancel</button>
+            </div>
+        </div>
+
         <div id="activeState" class="panel-section sidebar-active-call hidden" style="background: #1e2129; border-radius: 12px; padding: 20px 16px; text-align: center; border: 1px solid #2a2e39; margin-top: 20px;">
             <div style="width: 56px; height: 56px; background: #2a2e39; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px auto;">
                 <i class="fa-solid fa-user" style="font-size: 1.5rem; color: #8b949e;"></i>
@@ -112,8 +117,8 @@
             <div id="callTimer" style="color: #2ecc71; font-family: monospace; font-size: 1.1rem; font-weight: 600; margin-bottom: 20px;">00:00</div>
 
             <div id="controlsBar" class="controls-bar controls-bar--sidebar" style="display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
-                <button id="btnMute" class="ctrl-btn mute" title="Mute Mic" style="background: #2a2e39; color: white; border: none; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; transition: 0.2s;">
-                    <i class="fa-solid fa-microphone-slash"></i>
+                <button id="btnMute" class="ctrl-btn mute" title="Mute microphone" style="background: #2a2e39; color: white; border: none; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; transition: 0.2s;">
+                    <i class="fa-solid fa-microphone"></i>
                 </button>
 
                 <button id="btnHold" class="ctrl-btn hold" title="Hold Call" style="background: #2a2e39; color: white; border: none; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; transition: 0.2s;">
@@ -236,7 +241,7 @@
 
 </div>
 
-<script type="module" src="js/app.js?v=23"></script>
+<script type="module" src="js/app.js?v=24"></script>
 
 </body>
 </html>

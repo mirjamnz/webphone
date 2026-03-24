@@ -1,9 +1,23 @@
 /**
  * js/phone.js
  * Simplified SIP/WebRTC Engine with RFC 5626 (Outbound), ICE Fixes, and Heartbeat Watchdog
- * Last modified: 2026-03-24 — blindTransfer() via SIP REFER for sidebar transfer button.
+ * Last modified: 2026-03-24 — toggleMute (sender tracks), toggleHold (re-INVITE + Web.holdModifier).
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
+
+/**
+ * Re-INVITE SDP tweak after hold (sendonly/inactive → sendrecv).
+ * @param {{ sdp?: string, type: string }} description
+ */
+function unholdModifier(description) {
+    if (!description.sdp || !description.type) {
+        throw new Error('Invalid SDP');
+    }
+    let sdp = description.sdp;
+    sdp = sdp.replace(/a=sendonly\r?\n/g, 'a=sendrecv\r\n');
+    sdp = sdp.replace(/a=inactive\r?\n/g, 'a=sendrecv\r\n');
+    return Promise.resolve({ sdp, type: description.type });
+}
 
 /**
  * Parse each <sip:…> binding in a Contact header value (comma-separated list).
@@ -174,6 +188,10 @@ export class PhoneEngine {
         this.heartbeatThreshold = 10000; // 10 seconds
         this.lastKnownState = null;
         this.lastKnownDomain = null;
+        /** Local mic muted (outbound audio tracks disabled). */
+        this.localMuted = false;
+        /** SIP hold (re-INVITE sendonly) active. */
+        this.onHold = false;
 
         // Page Visibility: embedded Chromium (Cursor Simple Browser) throttles setInterval while unfocused;
         // without this, lastHeartbeat stalls and we false-trigger reconnect → lost registration.
@@ -456,6 +474,8 @@ export class PhoneEngine {
 
     cleanupCall() {
         this.session = null;
+        this.localMuted = false;
+        this.onHold = false;
         this.callbacks.onCallEnd();
     }
 
@@ -501,8 +521,53 @@ export class PhoneEngine {
         }
     }
 
-    toggleMute() { return false; }
-    async toggleHold() { return false; }
+    /**
+     * Mute / unmute local microphone (WebRTC senders). Does not change SIP signaling.
+     * @returns {boolean} true if mic is muted after toggle
+     */
+    toggleMute() {
+        if (!this.session || this.session.state !== SIP.SessionState.Established) {
+            return this.localMuted;
+        }
+        const pc = this.session.sessionDescriptionHandler?.peerConnection;
+        if (!pc) return this.localMuted;
+
+        this.localMuted = !this.localMuted;
+        const enable = !this.localMuted;
+        pc.getSenders().forEach((sender) => {
+            if (sender.track && sender.track.kind === 'audio') {
+                sender.track.enabled = enable;
+            }
+        });
+        return this.localMuted;
+    }
+
+    /**
+     * Hold / resume via re-INVITE (RFC 3264 sendonly vs negotiated sendrecv).
+     * @returns {Promise<boolean>} true if call is on hold after toggle
+     */
+    async toggleHold() {
+        if (!this.session || this.session.state !== SIP.SessionState.Established) {
+            return this.onHold;
+        }
+        const WebApi = SIP.Web;
+        if (!WebApi || typeof WebApi.holdModifier !== 'function') {
+            console.warn('toggleHold: SIP.Web.holdModifier missing');
+            return this.onHold;
+        }
+
+        const nextHold = !this.onHold;
+        try {
+            await this.session.invite({
+                sessionDescriptionHandlerModifiers: nextHold ? [WebApi.holdModifier] : [unholdModifier]
+            });
+            this.onHold = nextHold;
+            return this.onHold;
+        } catch (e) {
+            console.error('toggleHold re-INVITE failed', e);
+            return this.onHold;
+        }
+    }
     isCallActive() { return this.session && this.session.state === SIP.SessionState.Established; }
     sendDTMF(tone) { if (this.session) this.session.dtmf(tone); }
 }

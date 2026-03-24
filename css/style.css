@@ -132,10 +132,108 @@ body {
 .sidebar-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
     margin-bottom: 20px;
     padding-bottom: 15px;
     border-bottom: 1px solid var(--border);
+}
+
+.sidebar-header--enhanced .header-brand {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+
+.header-brand-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.reg-status-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    font-size: 1rem;
+    transition: color 0.2s ease;
+}
+
+.reg-status-icon.reg-status--ok {
+    color: #2ecc71;
+}
+
+.reg-status-icon.reg-status--bad {
+    color: #e74c3c;
+}
+
+.reg-status-icon.reg-status--pending {
+    color: #f39c12;
+}
+
+.header-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* In-sidebar transfer / help (replaces browser prompt over the main stage) */
+.sidebar-transfer-sheet {
+    margin: 12px 0 0 0;
+    padding: 12px 14px;
+    background: #1e2129;
+    border: 1px solid #2a2e39;
+    border-radius: 10px;
+}
+
+.sidebar-transfer-sheet.hidden {
+    display: none !important;
+}
+
+.sidebar-transfer-sheet__title {
+    margin: 0 0 10px 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.sidebar-transfer-sheet__input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.25);
+    color: var(--text-main);
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+}
+
+.sidebar-transfer-sheet__msg {
+    margin: 0 0 10px 0;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.sidebar-transfer-sheet__msg.hidden {
+    display: none !important;
+}
+
+.sidebar-transfer-sheet__field.hidden {
+    display: none !important;
+}
+
+.sidebar-transfer-sheet__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
 }
 
 .header-brand {
