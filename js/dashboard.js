@@ -1,9 +1,49 @@
 /**
  * Live supervisor dashboard (active calls, directory-driven Agents/Queues, recordings).
- * Last modified: 2026-03-24 — subscriberStatus.onlineByNumber + Extension/Login labels (dialUser vs presenceUser).
+ * Last modified: 2026-03-24 — queue rows show assigned agents as online/offline tags (queueAssignments + subscriberStatus).
  */
 
 import { resolveAgentSipTargets } from './agent-sip-targets.js';
+
+/** @param {unknown} subscriberStatus */
+function parseSubscriberOnlineDict(subscriberStatus) {
+    let onlineDict = {};
+    if (subscriberStatus != null && typeof subscriberStatus === 'object') {
+        const o = /** @type {{ onlineByNumber?: Record<string, string>, ok?: boolean }} */ (subscriberStatus);
+        if (o.onlineByNumber != null && typeof o.onlineByNumber === 'object') {
+            onlineDict = o.onlineByNumber;
+        } else if (!('ok' in o)) {
+            onlineDict = /** @type {Record<string, string>} */ (subscriberStatus);
+        }
+    }
+    return onlineDict;
+}
+
+function heroOnlineValue(map, key) {
+    if (map == null || key == null || key === '') return false;
+    const v = map[key];
+    return v === '1' || v === 1;
+}
+
+/**
+ * @param {Record<string, string>} onlineDict
+ * @param {string} number - directory map key
+ * @param {{ type?: string, extension?: unknown, shortNumber?: unknown, authLogin?: unknown, callerId?: unknown }} data
+ */
+function isAgentOnlineInHeroMap(onlineDict, number, data) {
+    if (!data || data.type !== 'agent') return false;
+    const { presenceUser } = resolveAgentSipTargets(number, data);
+    const authLogin = data.authLogin != null ? String(data.authLogin).trim() : '';
+    const callerId = data.callerId != null ? String(data.callerId).trim() : '';
+    return (
+        heroOnlineValue(onlineDict, number) ||
+        heroOnlineValue(onlineDict, data.extension) ||
+        heroOnlineValue(onlineDict, data.shortNumber) ||
+        heroOnlineValue(onlineDict, authLogin) ||
+        heroOnlineValue(onlineDict, callerId) ||
+        heroOnlineValue(onlineDict, presenceUser)
+    );
+}
 
 function escapeHtml(s) {
     if (s == null) return '';
@@ -62,7 +102,12 @@ export class DashboardManager {
             if (!d || typeof d !== 'object') continue;
             const ext = d.extension != null ? String(d.extension) : '';
             const short = d.shortNumber != null ? String(d.shortNumber) : '';
-            if (ext === s || short === s || key === s) return { key, ...d };
+            const authLogin = d.authLogin != null ? String(d.authLogin).trim() : '';
+            if (ext === s || short === s || key === s || authLogin === s) return { key, ...d };
+            if (d.type === 'agent') {
+                const { presenceUser } = resolveAgentSipTargets(key, d);
+                if (presenceUser === s) return { key, ...d };
+            }
         }
         return null;
     }
@@ -157,9 +202,15 @@ export class DashboardManager {
         const calls = data.calls || [];
         const active = calls.filter(c => c.status === 'answered');
         const queuedCalls = calls.filter(c => c.status === 'ringing');
+        const onlineDict = parseSubscriberOnlineDict(data.subscriberStatus);
         const agents = Object.entries(this.directory)
             .filter(([, d]) => d.type === 'agent')
-            .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || '', undefined, { sensitivity: 'base' }));
+            .sort((a, b) => {
+                const aOn = isAgentOnlineInHeroMap(onlineDict, a[0], a[1]);
+                const bOn = isAgentOnlineInHeroMap(onlineDict, b[0], b[1]);
+                if (aOn !== bOn) return aOn ? -1 : 1;
+                return (a[1].name || '').localeCompare(b[1].name || '', undefined, { sensitivity: 'base' });
+            });
         const queuesDir = Object.entries(this.directory).filter(([num, d]) => d.type === 'queue');
 
         if (this.ui.stats.active) this.ui.stats.active.innerText = active.length;
@@ -168,7 +219,7 @@ export class DashboardManager {
 
         this.renderCallsList(active);
         this.renderAgentsList(agents, data.subscriberStatus);
-        this.renderQueuesList(queuesDir, queuedCalls);
+        this.renderQueuesList(queuesDir, queuedCalls, data.queueAssignments || {}, data.subscriberStatus);
     }
 
     renderCallsList(calls) {
@@ -198,37 +249,14 @@ export class DashboardManager {
         const container = this.ui.lists.agents;
         if (!container) return;
 
-        const heroOn = (map, key) => {
-            if (map == null || key == null || key === '') return false;
-            const v = map[key];
-            return v === '1' || v === 1;
-        };
-
-        /** Server wrapper { ok, onlineByNumber }; fall back to flat Hero Data for older backends. */
-        let onlineDict = {};
-        if (subscriberStatus != null && typeof subscriberStatus === 'object') {
-            if (subscriberStatus.onlineByNumber != null && typeof subscriberStatus.onlineByNumber === 'object') {
-                onlineDict = subscriberStatus.onlineByNumber;
-            } else if (!('ok' in subscriberStatus)) {
-                onlineDict = subscriberStatus;
-            }
-        }
-
+        const onlineDict = parseSubscriberOnlineDict(subscriberStatus);
         const heroEnabled = subscriberStatus != null && typeof subscriberStatus === 'object';
 
         container.innerHTML = agents.map(([number, data]) => {
             const displayName = escapeHtml(data.name || 'Agent');
             const { presenceUser, dialUser } = resolveAgentSipTargets(number, data);
 
-            const authLogin = data.authLogin != null ? String(data.authLogin).trim() : '';
-            const callerId = data.callerId != null ? String(data.callerId).trim() : '';
-            const isOnline =
-                heroOn(onlineDict, number) ||
-                heroOn(onlineDict, data.extension) ||
-                heroOn(onlineDict, data.shortNumber) ||
-                heroOn(onlineDict, authLogin) ||
-                heroOn(onlineDict, callerId) ||
-                heroOn(onlineDict, presenceUser);
+            const isOnline = isAgentOnlineInHeroMap(onlineDict, number, data);
 
             const stateClass = !heroEnabled ? 'state-unknown' : isOnline ? 'state-available' : 'state-offline';
             const stateLabel = !heroEnabled ? '…' : isOnline ? 'Online' : 'Offline';
@@ -257,20 +285,65 @@ export class DashboardManager {
         }).join('');
     }
 
-    renderQueuesList(queues, queuedCalls) {
+    /**
+     * @param {Array<[string, object]>} queues
+     * @param {unknown[]} queuedCalls
+     * @param {Record<string, string[]>} [queueAssignments] queue key / ext → SIP logins or extensions from server
+     * @param {unknown} [subscriberStatus]
+     */
+    renderQueuesList(queues, queuedCalls, queueAssignments = {}, subscriberStatus = null) {
         const container = this.ui.lists.queues;
         if (!container) return;
+
+        const onlineDict = parseSubscriberOnlineDict(subscriberStatus);
+
         container.innerHTML = queues.map(([number, data]) => {
             const ext = data.extension != null ? String(data.extension) : number;
             const waitingCount = queuedCalls.filter(
                 (c) => String(c.callee_number) === String(number) || String(c.callee_number) === String(ext)
             ).length;
-            return `<div class="supervisor-queue-item"><div class="queue-info"><span class="queue-name" title="Display name">${escapeHtml(
-                data.name || 'Queue'
-            )}</span><span class="queue-ext agent-meta">Ext: ${escapeHtml(ext)}</span><span class="call-status ${
-                waitingCount > 0 ? 'ringing' : 'answered'
-            }">${waitingCount} Waiting</span></div></div>`;
+
+            const assignedRaw = queueAssignments[number] || queueAssignments[ext] || [];
+            const assignedAgents = Array.isArray(assignedRaw) ? assignedRaw : [];
+
+            const agentTags = assignedAgents.map((agentLogin) => {
+                const id = String(agentLogin).trim();
+                const isOnline = this._isQueueMemberOnline(onlineDict, id);
+                const dirEntry = this.resolveDirectoryEntry(id);
+                const agentName = dirEntry?.name || id;
+                const dotColor = isOnline ? '#2ecc71' : '#e74c3c';
+                const opacity = isOnline ? '1' : '0.5';
+                return `<span style="display:inline-block; font-size:0.75rem; background:rgba(255,255,255,0.1); padding:4px 8px; border-radius:12px; margin-right:6px; margin-top:6px; opacity:${opacity};">
+                            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${dotColor}; margin-right:4px; vertical-align:middle;"></span>
+                            ${escapeHtml(agentName)}
+                        </span>`;
+            }).join('');
+
+            return `
+            <div class="supervisor-queue-item" style="padding-bottom:12px; height:auto;">
+                <div class="queue-info" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+                    <span>
+                        <span class="queue-name" style="font-size:1.1rem; font-weight:600;" title="Display name">${escapeHtml(data.name || 'Queue')}</span>
+                        <span class="queue-ext agent-meta" style="margin-left:8px;">Ext: ${escapeHtml(ext)}</span>
+                    </span>
+                    <span class="call-status ${waitingCount > 0 ? 'ringing' : 'answered'}">${waitingCount} Waiting</span>
+                </div>
+                <div class="queue-agents">
+                    ${assignedAgents.length > 0 ? agentTags : '<span class="subtle" style="font-size:0.8rem; opacity:0.7;">No agents assigned</span>'}
+                </div>
+            </div>`;
         }).join('');
+    }
+
+    /**
+     * @param {Record<string, string>} onlineDict
+     * @param {string} agentId - SIP login, extension, or directory key from queueAssignments
+     */
+    _isQueueMemberOnline(onlineDict, agentId) {
+        if (heroOnlineValue(onlineDict, agentId)) return true;
+        const d = this.resolveDirectoryEntry(agentId);
+        if (!d || d.type !== 'agent') return false;
+        return isAgentOnlineInHeroMap(onlineDict, d.key, d);
     }
 
     renderRecordings(recs) {

@@ -1,6 +1,6 @@
 /**
  * Hero PBX bridge: phonebook XML, live calls, recordings, optional Hero portal API (subscriber status).
- * Last modified: 2026-03-24 — live-status subscriberStatus as { ok, onlineByNumber } for dashboard parsing.
+ * Last modified: 2026-03-24 — queueAssignments from queue contacts members attr + live-status payload.
  */
 require('dotenv').config();
 const express = require('express');
@@ -207,6 +207,25 @@ const pool = new Pool({
 let phonebookCache = {};
 const CONTACTS_URL = "https://portal.hero.co.nz/api/contacts.php?l=6LIwSI1NpVIU3Jrl6dV1D7*2FdgdAOmZgkxqhjOxOFaebqbJTfbwW2zXMUekqinF6bd0UWuUq68zzaLiqlWpc*2FLQ*3D*3D";
 
+/**
+ * Map queue directory key / extension → assigned agent ids (SIP logins or extensions from contacts `members`).
+ * @param {Record<string, object>} dir
+ * @returns {Record<string, string[]>}
+ */
+function buildQueueAssignmentsFromDirectory(dir) {
+    const out = {};
+    if (!dir || typeof dir !== 'object') return out;
+    for (const [mapKey, v] of Object.entries(dir)) {
+        if (!v || v.type !== 'queue' || !Array.isArray(v.memberLogins) || v.memberLogins.length === 0) continue;
+        const ext = v.extension != null ? String(v.extension).trim() : '';
+        const ids = new Set([mapKey, ext].filter(Boolean));
+        for (const qid of ids) {
+            out[qid] = [...v.memberLogins];
+        }
+    }
+    return out;
+}
+
 async function updatePhonebook() {
     try {
         const response = await axios.get(CONTACTS_URL);
@@ -236,6 +255,13 @@ async function updatePhonebook() {
                     const authLogin = authLoginRaw ? String(authLoginRaw).trim() : '';
                     const callerIdRaw = attr.callerid || attr.caller_id || attr.cli || '';
                     const callerId = callerIdRaw ? String(callerIdRaw).trim() : '';
+                    const membersRaw = attr.members || attr.queue_members || attr.agents || attr.queueagents || '';
+                    const memberLogins = membersRaw
+                        ? String(membersRaw)
+                              .split(/[,;|]/)
+                              .map((x) => x.trim())
+                              .filter(Boolean)
+                        : [];
                     // Full SIP/WebRTC user: phonebook may expose it as phone, login, or extension; short ext stays in number.
                     const fullLogin = phone || loginAttr || extensionAttr || '';
                     const key = fullLogin || num;
@@ -247,6 +273,7 @@ async function updatePhonebook() {
                         ...(fullLogin && num && fullLogin !== num ? { shortNumber: num } : {}),
                         ...(authLogin ? { authLogin } : {}),
                         ...(callerId ? { callerId } : {}),
+                        ...(type === 'queue' && memberLogins.length ? { memberLogins } : {}),
                     };
                 });
                 phonebookCache = newBook;
@@ -307,6 +334,7 @@ app.get('/api/live-status', async (req, res) => {
         if (subscriberStatus != null) {
             payload.subscriberStatus = { ok: true, onlineByNumber: subscriberStatus };
         }
+        payload.queueAssignments = buildQueueAssignmentsFromDirectory(directoryPayload);
         res.json(payload);
     } catch (e) { res.status(500).send("Error"); }
 });
