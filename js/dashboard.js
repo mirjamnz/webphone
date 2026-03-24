@@ -1,6 +1,6 @@
 /**
  * Live supervisor dashboard (active calls, directory-driven Agents/Queues, recordings).
- * Last modified: 2026-03-24 — queue cards with active/waiting + agent table; callee match by last 8 digits.
+ * Last modified: 2026-03-24 — dynamic stats row (4 cards); queue cards with inline agent pills.
  */
 
 import { resolveAgentSipTargets } from './agent-sip-targets.js';
@@ -216,14 +216,59 @@ export class DashboardManager {
 
         const queuesDir = Object.entries(this.directory).filter(([num, d]) => d && d.type === 'queue');
 
-        if (this.ui.stats.active) this.ui.stats.active.innerText = String(active.length);
-        if (this.ui.stats.agents) this.ui.stats.agents.innerText = String(agents.length);
-        if (this.ui.stats.queues) this.ui.stats.queues.innerText = String(queuesDir.length);
+        const availableAgentsCount = agents.filter(([num, d]) => isAgentOnlineInHeroMap(onlineDict, num, d)).length;
+        const todayStr = new Date().toDateString();
+        const recordings = Array.isArray(this.allRecordings) ? this.allRecordings : [];
+        const answeredTodayCount = recordings.filter((r) => {
+            if (r == null || r.ended_at == null) return false;
+            const d = new Date(r.ended_at);
+            return !Number.isNaN(d.getTime()) && d.toDateString() === todayStr;
+        }).length;
+
+        this.renderStatsRow(availableAgentsCount, active.length, queuedCalls.length, answeredTodayCount);
 
         this.renderCallsList(active);
         this.renderAgentsList(agents, data.subscriberStatus);
-
         this.renderQueuesList(queuesDir, queuedCalls, active, data.queueAssignments || {}, data.subscriberStatus);
+    }
+
+    /** Dynamically replaces the old stats HTML with a modern 4-card grid (use case: supervisor overview). */
+    renderStatsRow(available, active, queued, answered) {
+        let statsContainer = document.getElementById('dynamicStatsRow');
+        if (!statsContainer) {
+            const oldContainer = this.ui.stats.active?.parentElement?.parentElement;
+            if (oldContainer) {
+                statsContainer = document.createElement('div');
+                statsContainer.id = 'dynamicStatsRow';
+                statsContainer.style.display = 'grid';
+                statsContainer.style.gridTemplateColumns = 'repeat(auto-fit, minmax(200px, 1fr))';
+                statsContainer.style.gap = '16px';
+                statsContainer.style.marginBottom = '24px';
+                oldContainer.parentNode.insertBefore(statsContainer, oldContainer);
+                oldContainer.style.display = 'none';
+            } else {
+                return;
+            }
+        }
+
+        statsContainer.innerHTML = `
+            <div style="background: #1e2129; border: 1px solid #2a2e39; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <div style="color: #8b949e; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Available Agents</div>
+                <div style="color: #2ecc71; font-size: 2.5rem; font-weight: 700; line-height: 1;">${available}</div>
+            </div>
+            <div style="background: #1e2129; border: 1px solid #2a2e39; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <div style="color: #8b949e; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Active Calls</div>
+                <div style="color: #3498db; font-size: 2.5rem; font-weight: 700; line-height: 1;">${active}</div>
+            </div>
+            <div style="background: #1e2129; border: 1px solid #2a2e39; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <div style="color: #8b949e; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Calls Queued</div>
+                <div style="color: #f39c12; font-size: 2.5rem; font-weight: 700; line-height: 1;">${queued}</div>
+            </div>
+            <div style="background: #1e2129; border: 1px solid #2a2e39; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <div style="color: #8b949e; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Answered Today</div>
+                <div style="color: #ffffff; font-size: 2.5rem; font-weight: 700; line-height: 1;">${answered}</div>
+            </div>
+        `;
     }
 
     renderCallsList(calls) {
@@ -293,8 +338,8 @@ export class DashboardManager {
      * @param {Array<[string, object]>} queues
      * @param {unknown[]} queuedCalls
      * @param {unknown[]} activeCalls
-     * @param {Record<string, string[]>} [queueAssignments]
-     * @param {unknown} [subscriberStatus]
+     * @param {Record<string, string[]>} queueAssignments
+     * @param {unknown} subscriberStatus
      */
     renderQueuesList(queues, queuedCalls, activeCalls, queueAssignments = {}, subscriberStatus = null) {
         const container = this.ui.lists.queues;
@@ -327,42 +372,25 @@ export class DashboardManager {
             const assignedRaw = queueAssignments[number] || queueAssignments[ext] || [];
             const assignedAgents = Array.isArray(assignedRaw) ? assignedRaw : [];
 
-            const agentRows = assignedAgents
+            const agentTags = assignedAgents
                 .map((agentLogin) => {
                     const id = String(agentLogin).trim();
                     const isOnline = this._isQueueMemberOnline(onlineDict, id);
                     const dirEntry = this.resolveDirectoryEntry(id);
                     const agentName = dirEntry?.name || id;
 
-                    const statusText = isOnline ? 'Available' : 'Unavailable';
-                    const pillBg = isOnline ? '#2ecc71' : '#e74c3c';
-                    const pillColor = isOnline ? '#000000' : '#ffffff';
-                    const rowOpacity = isOnline ? '1' : '0.6';
-                    const initial = (agentName.charAt(0) || id.charAt(0) || '?').toUpperCase();
+                    const dotColor = isOnline ? '#2ecc71' : '#e74c3c';
+                    const opacity = isOnline ? '1' : '0.5';
 
-                    return `
-                <tr style="border-bottom: 1px solid #2a2e39; opacity: ${rowOpacity}; transition: all 0.2s ease;">
-                    <td style="padding: 12px 16px; color: #ffffff; display: flex; align-items: center; gap: 12px;">
-                        <div style="width: 28px; height: 28px; border-radius: 50%; background: #3b4252; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: bold; color: #d8dee9;">
-                            ${escapeHtml(initial)}
-                        </div>
-                        <span style="font-weight: 500;">${escapeHtml(agentName)}</span>
-                    </td>
-                    <td style="padding: 12px 16px;">
-                        <span style="background: ${pillBg}; color: ${pillColor}; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
-                            ${statusText}
-                        </span>
-                    </td>
-                    <td style="padding: 12px 16px; text-align: right; color: #8b949e; font-family: monospace; font-size: 0.85rem;">
-                        ${escapeHtml(id)}
-                    </td>
-                </tr>`;
+                    return `<span style="display:inline-flex; align-items:center; font-size:0.75rem; background:rgba(255,255,255,0.05); padding:6px 10px; border-radius:12px; margin-right:8px; margin-top:8px; opacity:${opacity}; color: white; border: 1px solid rgba(255,255,255,0.1);">
+                            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${dotColor}; margin-right:6px;"></span>
+                            ${escapeHtml(agentName)}
+                        </span>`;
                 })
                 .join('');
 
             return `
             <div class="supervisor-queue-card" style="background: #1e2129; border-radius: 8px; margin-bottom: 24px; overflow: hidden; border: 1px solid #2a2e39; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                
                 <div style="padding: 16px 20px; background: #252933; border-bottom: 1px solid #2a2e39; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px;">
                     <div>
                         <h3 style="margin: 0 0 4px 0; font-size: 1.25rem; font-weight: 600; color: #ffffff;">${escapeHtml(data.name || 'Queue')}</h3>
@@ -377,26 +405,8 @@ export class DashboardManager {
                         </div>
                     </div>
                 </div>
-
-                <div style="padding: 0; overflow-x: auto;">
-                    ${assignedAgents.length > 0 ? `
-                    <table style="width: 100%; min-width: 400px; border-collapse: collapse; text-align: left;">
-                        <thead>
-                            <tr style="background: #1e2129; border-bottom: 1px solid #2a2e39; color: #8b949e; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">
-                                <th style="padding: 12px 16px; font-weight: 600;">Agent Name</th>
-                                <th style="padding: 12px 16px; font-weight: 600;">Availability</th>
-                                <th style="padding: 12px 16px; font-weight: 600; text-align: right;">SIP / Extension</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${agentRows}
-                        </tbody>
-                    </table>
-                    ` : `
-                    <div style="padding: 24px; text-align: center; color: #8b949e; font-size: 0.9rem;">
-                        No agents assigned to this queue.
-                    </div>
-                    `}
+                <div style="padding: 16px 20px;">
+                    ${assignedAgents.length > 0 ? agentTags : '<span style="color:#8b949e; font-size:0.9rem;">No agents assigned to this queue.</span>'}
                 </div>
             </div>`;
         }).join('');
