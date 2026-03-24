@@ -1,6 +1,6 @@
 /**
  * Live supervisor dashboard (active calls, directory-driven Agents/Queues, recordings).
- * Last modified: 2026-03-24 — queue rows show assigned agents as online/offline tags (queueAssignments + subscriberStatus).
+ * Last modified: 2026-03-24 — queue cards with active/waiting + agent table; callee match by last 8 digits.
  */
 
 import { resolveAgentSipTargets } from './agent-sip-targets.js';
@@ -218,12 +218,12 @@ export class DashboardManager {
 
         if (this.ui.stats.active) this.ui.stats.active.innerText = String(active.length);
         if (this.ui.stats.agents) this.ui.stats.agents.innerText = String(agents.length);
-        // Label is "Queues" → count configured queue entries in directory (not waiting calls, not agents).
         if (this.ui.stats.queues) this.ui.stats.queues.innerText = String(queuesDir.length);
 
         this.renderCallsList(active);
         this.renderAgentsList(agents, data.subscriberStatus);
-        this.renderQueuesList(queuesDir, queuedCalls, data.queueAssignments || {}, data.subscriberStatus);
+
+        this.renderQueuesList(queuesDir, queuedCalls, active, data.queueAssignments || {}, data.subscriberStatus);
     }
 
     renderCallsList(calls) {
@@ -292,54 +292,111 @@ export class DashboardManager {
     /**
      * @param {Array<[string, object]>} queues
      * @param {unknown[]} queuedCalls
-     * @param {Record<string, string[]>} [queueAssignments] queue key / ext → SIP logins or extensions from server
+     * @param {unknown[]} activeCalls
+     * @param {Record<string, string[]>} [queueAssignments]
      * @param {unknown} [subscriberStatus]
      */
-    renderQueuesList(queues, queuedCalls, queueAssignments = {}, subscriberStatus = null) {
+    renderQueuesList(queues, queuedCalls, activeCalls, queueAssignments = {}, subscriberStatus = null) {
         const container = this.ui.lists.queues;
         if (!container) return;
 
         const onlineDict = parseSubscriberOnlineDict(subscriberStatus);
 
         if (!queues.length) {
-            container.innerHTML =
-                '<div class="empty-state">No queues in directory (check phonebook: name or type must identify queues).</div>';
+            container.innerHTML = '<div class="empty-state">No queues configured.</div>';
             return;
         }
 
+        const isSameNum = (numA, numB) => {
+            if (!numA || !numB) return false;
+            const a = String(numA).replace(/\D/g, '');
+            const b = String(numB).replace(/\D/g, '');
+            return a.slice(-8) === b.slice(-8);
+        };
+
         container.innerHTML = queues.map(([number, data]) => {
             const ext = data.extension != null ? String(data.extension) : number;
+
             const waitingCount = queuedCalls.filter(
-                (c) => String(c.callee_number) === String(number) || String(c.callee_number) === String(ext)
+                (c) => isSameNum(c.callee_number, number) || isSameNum(c.callee_number, ext)
+            ).length;
+            const activeCount = activeCalls.filter(
+                (c) => isSameNum(c.callee_number, number) || isSameNum(c.callee_number, ext)
             ).length;
 
             const assignedRaw = queueAssignments[number] || queueAssignments[ext] || [];
             const assignedAgents = Array.isArray(assignedRaw) ? assignedRaw : [];
 
-            const agentTags = assignedAgents.map((agentLogin) => {
-                const id = String(agentLogin).trim();
-                const isOnline = this._isQueueMemberOnline(onlineDict, id);
-                const dirEntry = this.resolveDirectoryEntry(id);
-                const agentName = dirEntry?.name || id;
-                const dotColor = isOnline ? '#2ecc71' : '#e74c3c';
-                const opacity = isOnline ? '1' : '0.5';
-                return `<span style="display:inline-block; font-size:0.75rem; background:rgba(255,255,255,0.1); padding:4px 8px; border-radius:12px; margin-right:6px; margin-top:6px; opacity:${opacity};">
-                            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${dotColor}; margin-right:4px; vertical-align:middle;"></span>
-                            ${escapeHtml(agentName)}
-                        </span>`;
-            }).join('');
+            const agentRows = assignedAgents
+                .map((agentLogin) => {
+                    const id = String(agentLogin).trim();
+                    const isOnline = this._isQueueMemberOnline(onlineDict, id);
+                    const dirEntry = this.resolveDirectoryEntry(id);
+                    const agentName = dirEntry?.name || id;
+
+                    const statusText = isOnline ? 'Available' : 'Unavailable';
+                    const pillBg = isOnline ? '#2ecc71' : '#e74c3c';
+                    const pillColor = isOnline ? '#000000' : '#ffffff';
+                    const rowOpacity = isOnline ? '1' : '0.6';
+                    const initial = (agentName.charAt(0) || id.charAt(0) || '?').toUpperCase();
+
+                    return `
+                <tr style="border-bottom: 1px solid #2a2e39; opacity: ${rowOpacity}; transition: all 0.2s ease;">
+                    <td style="padding: 12px 16px; color: #ffffff; display: flex; align-items: center; gap: 12px;">
+                        <div style="width: 28px; height: 28px; border-radius: 50%; background: #3b4252; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: bold; color: #d8dee9;">
+                            ${escapeHtml(initial)}
+                        </div>
+                        <span style="font-weight: 500;">${escapeHtml(agentName)}</span>
+                    </td>
+                    <td style="padding: 12px 16px;">
+                        <span style="background: ${pillBg}; color: ${pillColor}; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
+                            ${statusText}
+                        </span>
+                    </td>
+                    <td style="padding: 12px 16px; text-align: right; color: #8b949e; font-family: monospace; font-size: 0.85rem;">
+                        ${escapeHtml(id)}
+                    </td>
+                </tr>`;
+                })
+                .join('');
 
             return `
-            <div class="supervisor-queue-item" style="padding-bottom:12px; height:auto;">
-                <div class="queue-info" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
-                    <span>
-                        <span class="queue-name" style="font-size:1.1rem; font-weight:600;" title="Display name">${escapeHtml(data.name || 'Queue')}</span>
-                        <span class="queue-ext agent-meta" style="margin-left:8px;">Ext: ${escapeHtml(ext)}</span>
-                    </span>
-                    <span class="call-status ${waitingCount > 0 ? 'ringing' : 'answered'}">${waitingCount} Waiting</span>
+            <div class="supervisor-queue-card" style="background: #1e2129; border-radius: 8px; margin-bottom: 24px; overflow: hidden; border: 1px solid #2a2e39; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                
+                <div style="padding: 16px 20px; background: #252933; border-bottom: 1px solid #2a2e39; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px;">
+                    <div>
+                        <h3 style="margin: 0 0 4px 0; font-size: 1.25rem; font-weight: 600; color: #ffffff;">${escapeHtml(data.name || 'Queue')}</h3>
+                        <span style="font-size: 0.85rem; color: #8b949e; font-family: monospace;">Ext: ${escapeHtml(ext)}</span>
+                    </div>
+                    <div style="display: flex; gap: 12px;">
+                        <div style="background: rgba(46, 204, 113, 0.1); border: 1px solid rgba(46, 204, 113, 0.2); color: #2ecc71; padding: 6px 16px; border-radius: 6px; font-weight: 600; font-size: 0.9rem;">
+                            ${activeCount} Active
+                        </div>
+                        <div style="background: rgba(231, 76, 60, 0.1); border: 1px solid rgba(231, 76, 60, 0.2); color: #e74c3c; padding: 6px 16px; border-radius: 6px; font-weight: 600; font-size: 0.9rem;">
+                            ${waitingCount} Waiting
+                        </div>
+                    </div>
                 </div>
-                <div class="queue-agents">
-                    ${assignedAgents.length > 0 ? agentTags : '<span class="subtle" style="font-size:0.8rem; opacity:0.7;">No agents assigned</span>'}
+
+                <div style="padding: 0; overflow-x: auto;">
+                    ${assignedAgents.length > 0 ? `
+                    <table style="width: 100%; min-width: 400px; border-collapse: collapse; text-align: left;">
+                        <thead>
+                            <tr style="background: #1e2129; border-bottom: 1px solid #2a2e39; color: #8b949e; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                                <th style="padding: 12px 16px; font-weight: 600;">Agent Name</th>
+                                <th style="padding: 12px 16px; font-weight: 600;">Availability</th>
+                                <th style="padding: 12px 16px; font-weight: 600; text-align: right;">SIP / Extension</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${agentRows}
+                        </tbody>
+                    </table>
+                    ` : `
+                    <div style="padding: 24px; text-align: center; color: #8b949e; font-size: 0.9rem;">
+                        No agents assigned to this queue.
+                    </div>
+                    `}
                 </div>
             </div>`;
         }).join('');
