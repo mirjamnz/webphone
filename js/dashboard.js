@@ -1,6 +1,6 @@
 /**
  * Live supervisor dashboard (active calls, directory-driven Agents/Queues, recordings).
- * Last modified: 2026-03-24 — agent presence from Hero subscriberStatus only (no SIP SUBSCRIBE on dashboard).
+ * Last modified: 2026-03-24 — subscriberStatus.onlineByNumber + Extension/Login labels (dialUser vs presenceUser).
  */
 
 import { resolveAgentSipTargets } from './agent-sip-targets.js';
@@ -192,7 +192,7 @@ export class DashboardManager {
 
     /**
      * @param {Array<[string, object]>} agents
-     * @param {Record<string, string>|null|undefined} subscriberStatus - from Hero Get-Subscriber-Status Data
+     * @param {{ ok?: boolean, onlineByNumber?: Record<string, string> }|Record<string, string>|null|undefined} subscriberStatus
      */
     renderAgentsList(agents, subscriberStatus) {
         const container = this.ui.lists.agents;
@@ -204,31 +204,39 @@ export class DashboardManager {
             return v === '1' || v === 1;
         };
 
+        /** Server wrapper { ok, onlineByNumber }; fall back to flat Hero Data for older backends. */
+        let onlineDict = {};
+        if (subscriberStatus != null && typeof subscriberStatus === 'object') {
+            if (subscriberStatus.onlineByNumber != null && typeof subscriberStatus.onlineByNumber === 'object') {
+                onlineDict = subscriberStatus.onlineByNumber;
+            } else if (!('ok' in subscriberStatus)) {
+                onlineDict = subscriberStatus;
+            }
+        }
+
+        const heroEnabled = subscriberStatus != null && typeof subscriberStatus === 'object';
+
         container.innerHTML = agents.map(([number, data]) => {
             const displayName = escapeHtml(data.name || 'Agent');
             const { presenceUser, dialUser } = resolveAgentSipTargets(number, data);
 
-            let isOnline = false;
-            if (subscriberStatus && typeof subscriberStatus === 'object') {
-                const authLogin = data.authLogin != null ? String(data.authLogin).trim() : '';
-                const callerId = data.callerId != null ? String(data.callerId).trim() : '';
-                isOnline =
-                    heroOn(subscriberStatus, number) ||
-                    heroOn(subscriberStatus, data.extension) ||
-                    heroOn(subscriberStatus, data.shortNumber) ||
-                    heroOn(subscriberStatus, authLogin) ||
-                    heroOn(subscriberStatus, callerId) ||
-                    heroOn(subscriberStatus, presenceUser);
-            }
+            const authLogin = data.authLogin != null ? String(data.authLogin).trim() : '';
+            const callerId = data.callerId != null ? String(data.callerId).trim() : '';
+            const isOnline =
+                heroOn(onlineDict, number) ||
+                heroOn(onlineDict, data.extension) ||
+                heroOn(onlineDict, data.shortNumber) ||
+                heroOn(onlineDict, authLogin) ||
+                heroOn(onlineDict, callerId) ||
+                heroOn(onlineDict, presenceUser);
 
-            const heroEnabled = subscriberStatus != null && typeof subscriberStatus === 'object';
             const stateClass = !heroEnabled ? 'state-unknown' : isOnline ? 'state-available' : 'state-offline';
             const stateLabel = !heroEnabled ? '…' : isOnline ? 'Online' : 'Offline';
 
             const shortNum = data.shortNumber != null ? String(data.shortNumber).trim() : '';
             const extBlock =
                 shortNum && presenceUser && shortNum !== presenceUser
-                    ? `<div class="agent-meta"><span class="agent-label">Extension:</span> ${escapeHtml(shortNum)}</div>
+                    ? `<div class="agent-meta"><span class="agent-label">Extension:</span> ${escapeHtml(dialUser)}</div>
                        <div class="agent-meta subtle"><span class="agent-label">Login:</span> ${escapeHtml(presenceUser)}</div>`
                     : `<div class="agent-meta"><span class="agent-label">Extension:</span> ${escapeHtml(dialUser || presenceUser)}</div>`;
 

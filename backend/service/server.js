@@ -1,6 +1,6 @@
 /**
  * Hero PBX bridge: phonebook XML, live calls, recordings, optional Hero portal API (subscriber status).
- * Last modified: 2026-03-24 — resolve short extension → SIP login via Hero Get-Subscriber-Info for subscriberStatus matching.
+ * Last modified: 2026-03-24 — live-status subscriberStatus as { ok, onlineByNumber } for dashboard parsing.
  */
 require('dotenv').config();
 const express = require('express');
@@ -303,7 +303,10 @@ app.get('/api/live-status', async (req, res) => {
                 queue_count: activeCalls.rows.filter(c => c.status === 'ringing').length
             }
         };
-        if (subscriberStatus != null) payload.subscriberStatus = subscriberStatus;
+        // Dashboard expects { ok, onlineByNumber } so the UI does not confuse wrapper keys with SIP ids.
+        if (subscriberStatus != null) {
+            payload.subscriberStatus = { ok: true, onlineByNumber: subscriberStatus };
+        }
         res.json(payload);
     } catch (e) { res.status(500).send("Error"); }
 });
