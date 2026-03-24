@@ -1,7 +1,7 @@
 /**
  * js/phone.js
  * Simplified SIP/WebRTC Engine with RFC 5626 (Outbound), ICE Fixes, and Heartbeat Watchdog
- * Last modified: 2026-03-24 — REGISTER 200 Contact: pick binding by +sip.instance / max-expires; register: false.
+ * Last modified: 2026-03-24 — blindTransfer() via SIP REFER for sidebar transfer button.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
@@ -467,6 +467,37 @@ export class PhoneEngine {
             this.session.cancel();
         } else {
             this.session.reject();
+        }
+    }
+
+    /**
+     * Blind transfer (SIP REFER) — use case: send the connected party to another extension.
+     * @param {string} destination - extension or user part (domain from settings)
+     * @returns {boolean}
+     */
+    blindTransfer(destination) {
+        if (!this.session || this.session.state !== SIP.SessionState.Established) {
+            console.warn('blindTransfer: no established session');
+            return false;
+        }
+        const dest = String(destination ?? '').trim();
+        if (!dest) return false;
+        const domain = this.settings.get('domain') || this.config.DEFAULT_DOMAIN;
+        const target = SIP.UserAgent.makeURI(`sip:${dest}@${domain}`);
+        if (!target) {
+            console.warn('blindTransfer: invalid destination', destination);
+            return false;
+        }
+        try {
+            if (typeof this.session.refer !== 'function') {
+                console.warn('blindTransfer: session.refer not available in this SIP.js build');
+                return false;
+            }
+            this.session.refer(target);
+            return true;
+        } catch (e) {
+            console.error('blindTransfer failed', e);
+            return false;
         }
     }
 

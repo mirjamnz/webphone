@@ -297,13 +297,29 @@ input[type="text"], input[type="password"] {
     position: relative;
     overflow: hidden;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+}
+
+/* Supervisor fills the stage; hide the decorative idle placeholder underneath */
+.supervisor-dashboard:not(.hidden) ~ #idleState {
+    display: none !important;
 }
 
 .call-info {
     text-align: center;
     z-index: 10;
+}
+
+/* Center “Ready for calls” in the main stage when dashboard is hidden */
+.main-stage > #idleState {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
 .timer {
     font-family: monospace;
@@ -371,6 +387,25 @@ input[type="text"], input[type="password"] {
     pointer-events: auto; /* Ensure buttons are clickable */
 }
 .controls-bar.active { transform: translateY(0); }
+
+/* In-call controls live under the dialpad in the left sidebar (not floating on main stage) */
+.controls-bar.controls-bar--sidebar {
+    position: static;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    transform: none !important;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border: none;
+    backdrop-filter: none;
+    box-shadow: none;
+    z-index: auto;
+}
+.controls-bar.controls-bar--sidebar.active {
+    transform: none !important;
+}
 
 .controls-bar .ctrl-btn {
     pointer-events: auto; /* Ensure buttons are clickable */
@@ -921,7 +956,8 @@ input:checked + .slider:before {
 /* --- Supervisor Dashboard Styles --- */
 .supervisor-dashboard {
     width: 100%;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     padding: 20px;

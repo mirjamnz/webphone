@@ -65,6 +65,22 @@ const phoneCallbacks = {
 
 const phone = new PhoneEngine(CONFIG, settings, audio, phoneCallbacks);
 
+/** Updates sidebar header to show signed-in extension (use case: agent knows which line is active). */
+function syncAgentPanelTitle() {
+    const titleEl = document.getElementById('agentPanelTitle');
+    const user = settings.get('username');
+    if (!titleEl) return;
+    if (!user) {
+        titleEl.textContent = 'Agent Panel';
+        return;
+    }
+    titleEl.replaceChildren();
+    const icon = document.createElement('i');
+    icon.className = 'fa-solid fa-user-tie';
+    icon.style.marginRight = '8px';
+    titleEl.append(icon, document.createTextNode(user));
+}
+
 window.app = {
     dashboard: dashboardManager,
     async callSpecial(num) {
@@ -146,6 +162,7 @@ function attachEvents() {
 
         ui.loginPage.classList.add('hidden');
         ui.mainApp.classList.remove('hidden');
+        syncAgentPanelTitle();
 
         await userManager.initializeFromExtension(user);
 
@@ -166,6 +183,29 @@ function attachEvents() {
     document.getElementById('btnHangup').onclick = () => phone.hangup();
     document.getElementById('btnMute').onclick = function() { this.classList.toggle('active', phone.toggleMute()); };
     document.getElementById('btnHold').onclick = async function() { this.classList.toggle('active', await phone.toggleHold()); };
+
+    const btnBlind = document.getElementById('btnTransferBlind');
+    if (btnBlind) {
+        btnBlind.onclick = () => {
+            if (!phone.isCallActive()) {
+                alert('No active call to transfer.');
+                return;
+            }
+            const num = window.prompt('Blind transfer to extension or number:', '');
+            if (num == null || String(num).trim() === '') return;
+            if (!phone.blindTransfer(num.trim())) {
+                alert('Transfer could not be started. Check console for details.');
+            }
+        };
+    }
+    const btnAtt = document.getElementById('btnTransferAttended');
+    if (btnAtt) {
+        btnAtt.onclick = () => {
+            alert(
+                'Attended transfer: place a consultation call to the third party from the dialpad, then complete the transfer from your desk phone or PBX feature codes if available. This Web client currently supports blind transfer (phone-arrow button) via SIP REFER.'
+            );
+        };
+    }
     document.getElementById('btnShowConfig').onclick = () => {
         ui.inputs.user.value = settings.get('username');
         ui.inputs.pass.value = settings.get('password');
@@ -177,6 +217,7 @@ function attachEvents() {
             username: ui.inputs.user.value, password: ui.inputs.pass.value,
             micId: ui.inputs.mic.value, speakerId: ui.inputs.speaker.value, ringerId: ui.inputs.ringer.value
         });
+        syncAgentPanelTitle();
         ui.panels.config.classList.add('hidden');
         phone.connect();
     };
@@ -211,6 +252,7 @@ async function bootstrap() {
     if (settings.get('username') && settings.get('password')) {
         ui.loginPage.classList.add('hidden');
         ui.mainApp.classList.remove('hidden');
+        syncAgentPanelTitle();
         await userManager.initializeFromExtension(settings.get('username'));
         if (userManager.hasRole('supervisor')) {
             document.getElementById('supervisorDashboard').classList.remove('hidden');

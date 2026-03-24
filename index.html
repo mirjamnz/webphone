@@ -48,17 +48,18 @@
 </div>
 
 <div id="mainApp" class="app-container hidden">
+
     <div class="panel sidebar">
         <div class="sidebar-header">
             <div class="header-brand">
                 <img src="public/images/Hero_logo.png" alt="Hero" class="brand-logo-small">
-                <h3>Agent Panel</h3>
+                <h3 id="agentPanelTitle">Agent Panel</h3>
             </div>
             <button class="config-btn" id="btnShowConfig" title="SIP Settings">
                 <i class="fa-solid fa-gear"></i>
             </button>
         </div>
-        
+
         <div class="dial-input-group">
             <input type="text" id="dialString" placeholder="0800..." autocomplete="off">
             <button id="btnShowHistory" class="input-action-btn"><i class="fa-solid fa-clock-rotate-left"></i></button>
@@ -101,9 +102,41 @@
             <button class="btn btn-warning" onclick="app.callSpecial('*45')">Q-In</button>
             <button class="btn btn-danger" onclick="app.callSpecial('*46')">Q-Out</button>
         </div>
-    </div> 
+
+        <div id="activeState" class="panel-section sidebar-active-call hidden" style="background: #1e2129; border-radius: 12px; padding: 20px 16px; text-align: center; border: 1px solid #2a2e39; margin-top: 20px;">
+            <div style="width: 56px; height: 56px; background: #2a2e39; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px auto;">
+                <i class="fa-solid fa-user" style="font-size: 1.5rem; color: #8b949e;"></i>
+            </div>
+
+            <h2 id="remoteIdentity" style="color: #ffffff; font-size: 1.3rem; margin-bottom: 4px;">Unknown</h2>
+            <div id="callTimer" style="color: #2ecc71; font-family: monospace; font-size: 1.1rem; font-weight: 600; margin-bottom: 20px;">00:00</div>
+
+            <div id="controlsBar" class="controls-bar controls-bar--sidebar" style="display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
+                <button id="btnMute" class="ctrl-btn mute" title="Mute Mic" style="background: #2a2e39; color: white; border: none; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; transition: 0.2s;">
+                    <i class="fa-solid fa-microphone-slash"></i>
+                </button>
+
+                <button id="btnHold" class="ctrl-btn hold" title="Hold Call" style="background: #2a2e39; color: white; border: none; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; transition: 0.2s;">
+                    <i class="fa-solid fa-pause"></i>
+                </button>
+
+                <button id="btnTransferBlind" class="ctrl-btn transfer-blind" title="Blind Transfer" style="background: #2a2e39; color: white; border: none; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; transition: 0.2s;">
+                    <i class="fa-solid fa-phone-arrow-right"></i>
+                </button>
+
+                <button id="btnTransferAttended" class="ctrl-btn transfer-attended" title="Attended Transfer" style="background: #2a2e39; color: white; border: none; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; transition: 0.2s;">
+                    <i class="fa-solid fa-users-viewfinder"></i>
+                </button>
+
+                <button id="btnHangup" class="ctrl-btn hangup" title="End Call" style="background: #e74c3c; color: white; border: none; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; transition: 0.2s;">
+                    <i class="fa-solid fa-phone-slash"></i>
+                </button>
+            </div>
+        </div>
+    </div>
 
     <div class="panel main-stage">
+
         <div id="supervisorDashboard" class="supervisor-dashboard hidden" data-role="supervisor">
             <div class="dashboard-header">
                 <h2><i class="fa-solid fa-chart-line"></i> Supervisor Dashboard</h2>
@@ -113,14 +146,14 @@
                     <div class="stat-card"><div class="stat-value" id="statQueues">0</div><div class="stat-label">Queues</div></div>
                 </div>
             </div>
-            
+
             <div class="dashboard-tabs">
                 <button class="tab-btn active" data-tab="calls">Active Calls</button>
                 <button class="tab-btn" data-tab="agents">Agents</button>
                 <button class="tab-btn" data-tab="queues">Queues</button>
                 <button class="tab-btn" data-tab="recordings">Recordings</button>
             </div>
-            
+
             <div class="dashboard-content">
                 <div id="tabCalls" class="tab-content active"><div id="activeCallsList" class="supervisor-list"></div></div>
                 <div id="tabAgents" class="tab-content"><div id="agentsList" class="supervisor-list"></div></div>
@@ -134,16 +167,12 @@
                     </div>
                     <div id="recordingsList" class="supervisor-list"></div>
                 </div>
+            </div>
+        </div>
 
         <div id="idleState" class="call-info">
             <i class="fa-solid fa-phone-volume" style="font-size: 4rem; color: var(--border); margin-bottom: 20px;"></i>
             <h2 style="color: var(--text-muted)">Ready for calls</h2>
-        </div>
-
-        <div id="activeState" class="call-info hidden">
-            <div class="avatar-circle"><i class="fa-solid fa-user"></i></div>
-            <h2 id="remoteIdentity">Unknown</h2>
-            <div id="callTimer" class="timer">00:00</div>
         </div>
 
         <div id="incomingModal" class="incoming-overlay hidden">
@@ -159,12 +188,6 @@
         </div>
 
         <audio id="remoteAudio" autoplay></audio>
-
-        <div id="controlsBar" class="controls-bar">
-            <button id="btnMute" class="ctrl-btn mute"><i class="fa-solid fa-microphone-slash"></i></button>
-            <button id="btnHangup" class="ctrl-btn hangup"><i class="fa-solid fa-phone-slash"></i></button>
-            <button id="btnHold" class="ctrl-btn hold"><i class="fa-solid fa-pause"></i></button>
-        </div>
     </div>
 
     <div id="configModal" class="modal-overlay hidden">
@@ -185,41 +208,35 @@
             <div id="historyList" class="history-list"></div>
         </div>
     </div>
-</div>
 
-<script src="https://unpkg.com/wavesurfer.js@7"></script>
+    <div id="audioModal" class="modal-overlay hidden" style="z-index: 9999; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); position: fixed; top: 0; left: 0; width: 100%; height: 100%; align-items: center; justify-content: center;">
+        <div class="modal-content" style="background: #1a1d21; padding: 30px; border: 1px solid #343a40; width: 450px; border-radius: 20px; position: relative; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.6); margin: 10% auto;">
+            <span class="close-modal" id="btnCloseAudioModal" style="position: absolute; top: 15px; right: 25px; color: #adb5bd; font-size: 32px; font-weight: bold; cursor: pointer;">&times;</span>
 
-<div id="audioModal" class="modal-overlay hidden" style="z-index: 9999; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; align-items: center; justify-content: center;">
-    <div class="modal-content" style="background: #1a1d21; padding: 30px; border: 1px solid #343a40; width: 450px; border-radius: 20px; position: relative; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.6); margin: 10% auto;">
-        <span class="close-modal" id="btnCloseAudioModal" style="position: absolute; top: 15px; right: 25px; color: #adb5bd; font-size: 32px; font-weight: bold; cursor: pointer;">&times;</span>
-        
-        <div style="margin-bottom: 25px;">
-            <h3 id="modalTitle" style="color: white; margin: 0; font-size: 1.2rem;">Call Recording</h3>
-            <p id="modalSubtitle" style="color: #6c757d; font-size: 0.9rem; margin-top: 8px; font-family: monospace;"></p>
-        </div>
+            <div style="margin-bottom: 25px;">
+                <h3 id="modalTitle" style="color: white; margin: 0; font-size: 1.2rem;">Call Recording</h3>
+                <p id="modalSubtitle" style="color: #6c757d; font-size: 0.9rem; margin-top: 8px; font-family: monospace;"></p>
+            </div>
 
-        <div id="waveform" style="width: 100%; margin: 25px 0; background: rgba(255,255,255,0.03); border-radius: 8px; padding: 10px;"></div>
+            <div id="waveform" style="width: 100%; margin: 25px 0; background: rgba(255,255,255,0.03); border-radius: 8px; padding: 10px;"></div>
 
-        <div class="player-controls" style="display: flex; justify-content: center; margin-bottom: 15px;">
-            <button id="btnPlayPause" class="btn-play-circle" style="width: 50px; height: 50px; font-size: 1.2rem;">
-                <i class="fa-solid fa-play"></i>
-            </button>
-        </div>
-        
-        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #2d3238;">
-            <a id="downloadBtn" href="#" download class="btn btn-primary" style="font-size: 0.8rem; text-decoration: none; display: inline-block;">
-                <i class="fa-solid fa-download"></i> Download MP3
-            </a>
+            <div class="player-controls" style="display: flex; justify-content: center; margin-bottom: 15px;">
+                <button id="btnPlayPause" class="btn-play-circle" style="width: 50px; height: 50px; font-size: 1.2rem;">
+                    <i class="fa-solid fa-play"></i>
+                </button>
+            </div>
+
+            <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #2d3238;">
+                <a id="downloadBtn" href="#" download class="btn btn-primary" style="font-size: 0.8rem; text-decoration: none; display: inline-block;">
+                    <i class="fa-solid fa-download"></i> Download MP3
+                </a>
+            </div>
         </div>
     </div>
-</div>
 
 </div>
-</div>
 
-<script src="https://unpkg.com/wavesurfer.js@7"></script>
-<!-- Bump ?v= when app logic changes; Chrome caches ES modules aggressively (plain reload may keep old app.js). -->
-<script type="module" src="js/app.js?v=21"></script>
+<script type="module" src="js/app.js?v=22"></script>
 
 </body>
 </html>
