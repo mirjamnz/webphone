@@ -2,7 +2,7 @@
  * User Profile & Role Management Module
  * 
  * Created: 2026-02-12
- * Last Modified: 2026-02-12
+ * Last Modified: 2026-03-24 — profile.cli from phonebook; sidebar title uses name / CLI.
  * 
  * Purpose:
  * Manages user profiles, roles (agent/supervisor), and role-based feature access.
@@ -42,6 +42,8 @@ export class UserManager {
             extension: this.settings.get('username') || '',
             role: 'agent',
             name: '',
+            /** Outbound CLI from phonebook (callerid / cli attrs), when available */
+            cli: '',
             email: '',
             queues: [], // Queue memberships
             preferences: {
@@ -67,6 +69,12 @@ export class UserManager {
     async initializeFromExtension(extension) {
         if (!extension) return;
 
+        const prev = this.profile.extension;
+        if (prev && String(prev).trim() !== String(extension).trim()) {
+            this.profile.name = '';
+            this.profile.cli = '';
+        }
+
         this.profile.extension = extension;
         
         // TODO: In production, fetch from API: /api/extensions?extension=eq.3001
@@ -90,6 +98,24 @@ export class UserManager {
         this.saveProfile();
         
         console.log(`User initialized: ${extension} as ${this.role}`);
+    }
+
+    /**
+     * Merge display name + CLI from Hero phonebook (live-status directory).
+     * @param {{ name?: string, callerId?: string, extension?: string }} row
+     */
+    applyPhonebookIdentity(row) {
+        if (!row || typeof row !== 'object') return;
+        if (row.name != null && String(row.name).trim()) {
+            this.profile.name = String(row.name).trim();
+        }
+        if (row.callerId != null && String(row.callerId).trim()) {
+            this.profile.cli = String(row.callerId).trim();
+        }
+        if (row.extension != null && String(row.extension).trim()) {
+            this.profile.extension = String(row.extension).trim();
+        }
+        this.saveProfile();
     }
 
     /**
@@ -129,7 +155,7 @@ export class UserManager {
      * @returns {string}
      */
     getDisplayName() {
-        return this.profile.name || this.profile.extension || 'Unknown';
+        return this.profile.name || this.profile.cli || this.profile.extension || 'Unknown';
     }
 
     /**

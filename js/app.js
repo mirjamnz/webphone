@@ -45,6 +45,9 @@ const phoneCallbacks = {
         const ls = s ? s.toLowerCase() : "";
         ui.statusText.innerText = s;
         ui.statusDot.className = (ls === 'registered' || ls === 'connected') ? 'status-indicator connected' : 'status-indicator';
+        if (ls === 'registered') {
+            void refreshAgentIdentityFromApi().then(() => syncAgentPanelTitle());
+        }
     },
     onIncoming: (c, a, r) => {
         document.getElementById('incomingIdentity').innerText = c;
@@ -65,20 +68,120 @@ const phoneCallbacks = {
 
 const phone = new PhoneEngine(CONFIG, settings, audio, phoneCallbacks);
 
-/** Updates sidebar header to show signed-in extension (use case: agent knows which line is active). */
+/**
+ * Match live-status directory entry for the current login (extension, short ext, or auth SIP id).
+ * Skips queue rows so queue extensions do not steal the match.
+ * @param {Record<string, unknown>|null|undefined} directory
+ * @param {string} username
+ * @returns {{ name?: string, callerId?: string, key: string } & Record<string, unknown>|null}
+ */
+function findDirectoryEntryForUser(directory, username) {
+    if (!directory || username == null || username === '') return null;
+    const s = String(username).trim();
+    if (!s) return null;
+
+    /** @type {Map<string, Record<string, unknown> & { key: string }>} */
+    const byKey = new Map();
+
+    const push = (key, d) => {
+        if (!key || !d || typeof d !== 'object') return;
+        if (d.type === 'queue') return;
+        const k = String(key);
+        if (!byKey.has(k)) byKey.set(k, { ...d, key: k });
+    };
+
+    const direct = directory[s];
+    if (direct && typeof direct === 'object') push(s, /** @type {Record<string, unknown>} */ (direct));
+
+    for (const [key, d] of Object.entries(directory)) {
+        if (!d || typeof d !== 'object') continue;
+        if (d.type === 'queue') continue;
+        const ext = d.extension != null ? String(d.extension) : '';
+        const short = d.shortNumber != null ? String(d.shortNumber) : '';
+        const authLogin = d.authLogin != null ? String(d.authLogin).trim() : '';
+        if (ext === s || short === s || key === s || authLogin === s) {
+            push(key, /** @type {Record<string, unknown>} */ (d));
+        }
+    }
+
+    for (const row of byKey.values()) {
+        if (row.type === 'agent') return row;
+    }
+    const first = byKey.values().next().value;
+    return first ?? null;
+}
+
+/** Fetches phonebook-backed display name + CLI from the same API as the supervisor dashboard. */
+async function refreshAgentIdentityFromApi() {
+    const user = settings.get('username');
+    if (!user) return;
+    try {
+        const res = await fetch(`${CONFIG.API_BASE_URL}/live-status`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const entry = findDirectoryEntryForUser(data.directory, user);
+        if (entry) {
+            userManager.applyPhonebookIdentity({
+                name: entry.name != null ? String(entry.name) : '',
+                callerId: entry.callerId != null ? String(entry.callerId) : '',
+                extension: user
+            });
+        }
+    } catch (e) {
+        console.warn('refreshAgentIdentityFromApi:', e);
+    }
+}
+
+/** Sidebar header: phonebook display name, else CLI, else extension (use case: human-readable agent id). */
 function syncAgentPanelTitle() {
     const titleEl = document.getElementById('agentPanelTitle');
-    const user = settings.get('username');
     if (!titleEl) return;
+    const user = settings.get('username');
     if (!user) {
         titleEl.textContent = 'Agent Panel';
+        titleEl.style.display = '';
         return;
     }
+
+    const namePb = (userManager.profile.name || '').trim();
+    const cliPb = (userManager.profile.cli || '').trim();
+    const primary = namePb || cliPb || user;
+
     titleEl.replaceChildren();
+    titleEl.style.display = 'flex';
+    titleEl.style.flexDirection = 'column';
+    titleEl.style.alignItems = 'flex-start';
+    titleEl.style.gap = '2px';
+    titleEl.style.margin = '0';
+    titleEl.style.fontWeight = '600';
+
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.lineHeight = '1.2';
+    row.style.fontSize = '0.95rem';
+
     const icon = document.createElement('i');
     icon.className = 'fa-solid fa-user-tie';
     icon.style.marginRight = '8px';
-    titleEl.append(icon, document.createTextNode(user));
+    icon.style.flexShrink = '0';
+    row.append(icon, document.createTextNode(primary));
+
+    titleEl.append(row);
+
+    if (namePb || cliPb) {
+        const bits = [];
+        if (cliPb) bits.push(`CLI ${cliPb}`);
+        bits.push(`Ext ${user}`);
+        const sub = document.createElement('div');
+        sub.style.fontSize = '0.72rem';
+        sub.style.fontWeight = '400';
+        sub.style.color = 'var(--text-muted)';
+        sub.style.lineHeight = '1.2';
+        sub.style.paddingLeft = 'calc(0.95rem + 8px)';
+        sub.textContent = bits.join(' · ');
+        titleEl.append(sub);
+    }
 }
 
 window.app = {
@@ -162,9 +265,10 @@ function attachEvents() {
 
         ui.loginPage.classList.add('hidden');
         ui.mainApp.classList.remove('hidden');
-        syncAgentPanelTitle();
 
         await userManager.initializeFromExtension(user);
+        await refreshAgentIdentityFromApi();
+        syncAgentPanelTitle();
 
         if (userManager.hasRole('supervisor')) {
             document.getElementById('supervisorDashboard').classList.remove('hidden');
@@ -217,7 +321,10 @@ function attachEvents() {
             username: ui.inputs.user.value, password: ui.inputs.pass.value,
             micId: ui.inputs.mic.value, speakerId: ui.inputs.speaker.value, ringerId: ui.inputs.ringer.value
         });
-        syncAgentPanelTitle();
+        void userManager.initializeFromExtension(ui.inputs.user.value.trim()).then(async () => {
+            await refreshAgentIdentityFromApi();
+            syncAgentPanelTitle();
+        });
         ui.panels.config.classList.add('hidden');
         phone.connect();
     };
@@ -252,8 +359,9 @@ async function bootstrap() {
     if (settings.get('username') && settings.get('password')) {
         ui.loginPage.classList.add('hidden');
         ui.mainApp.classList.remove('hidden');
-        syncAgentPanelTitle();
         await userManager.initializeFromExtension(settings.get('username'));
+        await refreshAgentIdentityFromApi();
+        syncAgentPanelTitle();
         if (userManager.hasRole('supervisor')) {
             document.getElementById('supervisorDashboard').classList.remove('hidden');
             dashboardManager.start();
