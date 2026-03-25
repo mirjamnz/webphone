@@ -1,5 +1,5 @@
 /**
- * js/config.js - Final Clean Version
+ * js/config.js - SIP defaults (hackIpInContact off for standard Contact).
  */
 export const CONFIG = { 
     DEFAULT_DOMAIN: "wss.hero.co.nz",
@@ -13,11 +13,10 @@ export const CONFIG = {
     SIP_OPTIONS: {
         traceSip: true,
         register: true,
-        hackIpInContact: false,
+        hackIpInContact: false, // Use .invalid / UUID Contact, not local IP in Contact
         // --- Improve Registration Success Rate ---
-        hackAllowUnregisteredOptionTags: true, 
-        hackIpInContact: true, 
-        contactParams: { "transport": "ws" }, 
+        hackAllowUnregisteredOptionTags: true,
+        contactParams: { transport: 'ws' },
         // Standard ICE negotiation
         sessionDescriptionHandlerFactoryOptions: {
             peerConnectionConfiguration: {

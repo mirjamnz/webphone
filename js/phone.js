@@ -1,7 +1,7 @@
 /**
  * js/phone.js
  * Simplified SIP/WebRTC Engine with RFC 5626 (Outbound), ICE Fixes, and Heartbeat Watchdog
- * Last modified: 2026-03-24 — toggleMute (sender tracks), toggleHold (re-INVITE + Web.holdModifier).
+ * Last modified: 2026-03-24 — hackIpInContact: false (standard Contact, not local IP).
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
@@ -260,7 +260,7 @@ export class PhoneEngine {
                 '+sip.instance': `"urn:uuid:${uuid}"`
             },
             hackAllowUnregisteredOptionTags: true,
-            hackIpInContact: true,
+            hackIpInContact: false, // Standard Contact (.invalid), not local IP
             forceRport: true,
             sipExtensionExtraSupported: ['outbound'],
             transportOptions: {
