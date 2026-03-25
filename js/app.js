@@ -5,7 +5,7 @@ import { AudioManager } from './audio.js';
 import { PhoneEngine } from './phone.js';
 import { UserManager } from './user.js';
 import { QueueManager } from './queue.js';
-import { DashboardManager } from './dashboard.js?v=26';
+import { DashboardManager } from './dashboard.js?v=27';
 
 const settings = new SettingsManager();
 const userManager = new UserManager(settings);

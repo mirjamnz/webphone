@@ -1,6 +1,6 @@
 /**
  * Live supervisor dashboard (active calls, directory-driven Agents/Queues, recordings).
- * Last modified: 2026-03-24 — queue Manage modal + POST /api/queues/manage.
+ * Last modified: 2026-03-24 — fuzzy resolveDirectoryEntry + manage checklist assignment match.
  */
 
 import { resolveAgentSipTargets } from './agent-sip-targets.js';
@@ -64,22 +64,6 @@ function escapeAttr(s) {
         .replace(/</g, '&lt;');
 }
 
-/** True if assignedList contains this login (exact or last-8-digit match). */
-function listHasQueueMember(assignedList, loginId) {
-    const want = String(loginId).trim();
-    if (!want || !Array.isArray(assignedList)) return false;
-    const dWant = want.replace(/\D/g, '');
-    for (const x of assignedList) {
-        const s = String(x).trim();
-        if (s === want) return true;
-        if (dWant.length >= 8) {
-            const dx = s.replace(/\D/g, '');
-            if (dx.slice(-8) === dWant.slice(-8)) return true;
-        }
-    }
-    return false;
-}
-
 export class DashboardManager {
     constructor(settings) {
         this.settings = settings;
@@ -109,12 +93,14 @@ export class DashboardManager {
         this.initModalListeners();
     }
 
-    /** Resolve directory row by exact key or by extension / shortNumber (for live call legs using short ids). */
+    /** Resolve directory row by exact key, extension, or fuzzy match (for Hero Portal string formats). */
     resolveDirectoryEntry(raw) {
         if (raw == null || raw === '') return null;
         const s = String(raw).trim();
         const dir = this.directory;
         if (dir[s]) return { key: s, ...dir[s] };
+
+        // Exact Match
         for (const [key, d] of Object.entries(dir)) {
             if (!d || typeof d !== 'object') continue;
             const ext = d.extension != null ? String(d.extension) : '';
@@ -125,6 +111,16 @@ export class DashboardManager {
                 const { presenceUser } = resolveAgentSipTargets(key, d);
                 if (presenceUser === s) return { key, ...d };
             }
+        }
+
+        // Fuzzy Match (Catches Hero Portal formatting like "MariaO (7677)")
+        const sLower = s.toLowerCase();
+        for (const [key, d] of Object.entries(dir)) {
+            if (!d || typeof d !== 'object' || d.type !== 'agent') continue;
+            const name = d.name ? String(d.name).toLowerCase() : '';
+            const short = d.shortNumber ? String(d.shortNumber).toLowerCase() : '';
+            if (name && name.length > 2 && sLower.includes(name)) return { key, ...d };
+            if (short && short.length > 2 && sLower.includes(short)) return { key, ...d };
         }
         return null;
     }
@@ -514,7 +510,23 @@ export class DashboardManager {
                     .map(([dirKey, d]) => {
                         const { presenceUser } = resolveAgentSipTargets(dirKey, d);
                         const agentLoginId = presenceUser;
-                        const isAssigned = listHasQueueMember(assignedList, agentLoginId);
+                        // Fuzzy matching for the UI Checkboxes
+                        const isAssigned = assignedList.some((assignedVal) => {
+                            if (!assignedVal) return false;
+                            const v = String(assignedVal).toLowerCase();
+                            const aId = String(agentLoginId).toLowerCase();
+                            if (v === aId || v.includes(aId)) return true;
+
+                            const name = String(d.name || '').toLowerCase();
+                            const short = String(d.shortNumber || '').toLowerCase();
+                            const ext = String(d.extension || '').toLowerCase();
+
+                            if (name && name.length > 2 && v.includes(name)) return true;
+                            if (short && short.length > 2 && v.includes(short)) return true;
+                            if (ext && ext.length > 2 && v.includes(ext)) return true;
+
+                            return false;
+                        });
 
                         return `
                 <label class="agent-checkbox-row">
