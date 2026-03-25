@@ -1,7 +1,7 @@
 /**
  * js/phone.js
  * Simplified SIP/WebRTC Engine with RFC 5626 (Outbound), ICE Fixes, and Heartbeat Watchdog
- * Last modified: 2026-03-24 — hackIpInContact: false (standard Contact, not local IP).
+ * Last modified: 2026-03-24 — preserve Kamailio alias= in REGISTER 2xx Contact sanitization.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
@@ -110,9 +110,11 @@ function sanitizeKamailioRegister2xxContact(raw, contactUserName, instanceUuid) 
     const expires =
         chosen.expires > 0 ? String(chosen.expires) : expHdr ? expHdr[1] : '120';
 
-    // Do not add +sip.instance with embedded quotes — SIP.js 0.21 Contact grammar can still fail.
-    // Registerer matches our binding via user@host (+ transport); instance was only used to pick the row.
-    const replacement = `Contact: <sip:${chosen.userHost};transport=ws>;expires=${expires}`;
+    // Preserve alias= from Kamailio so routing uses the open WebSocket (NAT path).
+    const aliasMatch = chosen.inner.match(/;(alias=[^;>]+)/i);
+    const aliasStr = aliasMatch ? `;${aliasMatch[1]}` : '';
+
+    const replacement = `Contact: <sip:${chosen.userHost};transport=ws${aliasStr}>;expires=${expires}`;
     return raw.replace(/^Contact:\s*[^\r\n]+/im, replacement);
 }
 
@@ -255,6 +257,7 @@ export class PhoneEngine {
             contactName: anonymousContactName,
             contactParams: {
                 transport: 'ws',
+                ob: '', // RFC 5626 outbound; SIP.js emits ;ob on Contact
                 '+sip.ice': undefined,
                 'reg-id': 1,
                 '+sip.instance': `"urn:uuid:${uuid}"`
