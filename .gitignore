@@ -28,6 +28,9 @@ yarn-error.log*
 .env
 config_local.js
 
+# Supervisor queue member edits (local persistence)
+backend/service/queue_assignment_overrides.json
+
 # Optional: If you want to keep your ringing sound but ignore other temp media
 # sounds/*
 # !sounds/ringing.mp3

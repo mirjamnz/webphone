@@ -1424,3 +1424,47 @@ input:checked + .slider:before {
     transform: scale(1.1);
     background: #2980b9;
 }
+
+/* --- Queue Management Modal Checklist --- */
+.agent-checkbox-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: #252933;
+    border: 1px solid #343a40;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.agent-checkbox-row:hover {
+    background: #2d3238;
+}
+
+.agent-checkbox-row input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--success);
+}
+
+.agent-checkbox-info {
+    flex: 1;
+    margin-left: 12px;
+    display: flex;
+    flex-direction: column;
+}
+
+.agent-checkbox-name {
+    color: #ffffff;
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+.agent-checkbox-ext {
+    color: #8b949e;
+    font-size: 0.75rem;
+    font-family: monospace;
+}

@@ -1,6 +1,6 @@
 /**
  * Hero PBX bridge: phonebook XML, live calls, recordings, optional Hero portal API (subscriber status).
- * Last modified: 2026-03-24 — queueAssignments from queue contacts members attr + live-status payload.
+ * Last modified: 2026-03-24 — POST /api/queues/manage + persisted queue_assignment_overrides.json.
  */
 require('dotenv').config();
 const express = require('express');
@@ -9,12 +9,16 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const axios = require('axios');
 const xml2js = require('xml2js');
+const fs = require('fs');
+const path = require('path');
 
 /** POST JSON to portal; token from Hero (same family as contacts.php link). */
 const HERO_API_URL = (process.env.HERO_API_URL || 'https://portal.hero.co.nz/api/').replace(/\/?$/, '/');
 const HERO_API_TOKEN = process.env.HERO_API_TOKEN || '';
 /** Hero JSON action to map PBX extension → auth SIP login (portal “Login: 8010614000xx”). Override if your tenant uses another name. */
 const HERO_SUBSCRIBER_INFO_ACTION = process.env.HERO_SUBSCRIBER_INFO_ACTION || 'Get-Subscriber-Info';
+/** Optional: Hero portal action to sync queue member add/remove (if your tenant exposes it). */
+const HERO_QUEUE_MANAGE_ACTION = (process.env.HERO_QUEUE_MANAGE_ACTION || '').trim();
 
 let subscriberStatusCache = { data: null, fetchedAt: 0 };
 const SUBSCRIBER_STATUS_TTL_MS = 10000;
@@ -226,6 +230,100 @@ function buildQueueAssignmentsFromDirectory(dir) {
     return out;
 }
 
+const QUEUE_OVERRIDES_PATH = path.join(__dirname, 'queue_assignment_overrides.json');
+/** @type {Record<string, string[]>} */
+let queueAssignmentOverrides = {};
+
+function loadQueueOverrides() {
+    try {
+        const raw = fs.readFileSync(QUEUE_OVERRIDES_PATH, 'utf8');
+        const o = JSON.parse(raw);
+        queueAssignmentOverrides = o && typeof o === 'object' ? o : {};
+    } catch {
+        queueAssignmentOverrides = {};
+    }
+}
+
+function saveQueueOverrides() {
+    try {
+        fs.writeFileSync(QUEUE_OVERRIDES_PATH, JSON.stringify(queueAssignmentOverrides, null, 2), 'utf8');
+    } catch (e) {
+        console.error('saveQueueOverrides:', e.message);
+    }
+}
+
+/**
+ * Directory keys / extension strings that identify one queue row (for mirroring overrides).
+ * @param {Record<string, object>} dir
+ * @param {string} queueNum
+ * @returns {string[]}
+ */
+function collectQueueKeysForId(dir, queueNum) {
+    const q = String(queueNum || '').trim();
+    if (!q) return [];
+    const keys = new Set([q]);
+    if (!dir || typeof dir !== 'object') return [...keys];
+    for (const [mapKey, v] of Object.entries(dir)) {
+        if (!v || v.type !== 'queue') continue;
+        const ext = v.extension != null ? String(v.extension).trim() : '';
+        if (mapKey === q || ext === q) {
+            keys.add(mapKey);
+            if (ext) keys.add(ext);
+        }
+    }
+    return [...keys];
+}
+
+/**
+ * Effective member list: supervisor overrides win when present, else phonebook `members`.
+ * @param {Record<string, object>} dir
+ * @param {string} queueNum
+ * @returns {string[]}
+ */
+function getEffectiveQueueMembers(dir, queueNum) {
+    const keys = collectQueueKeysForId(dir, queueNum);
+    for (const k of keys) {
+        if (Array.isArray(queueAssignmentOverrides[k])) {
+            return [...queueAssignmentOverrides[k]];
+        }
+    }
+    const base = buildQueueAssignmentsFromDirectory(dir);
+    for (const k of keys) {
+        if (base[k] && base[k].length) return [...base[k]];
+    }
+    return [];
+}
+
+/**
+ * @param {Record<string, object>} dir
+ * @param {string} queueNum
+ * @param {string[]} members
+ */
+function setQueueMembersOverride(dir, queueNum, members) {
+    const uniq = [...new Set(members.map((x) => String(x).trim()).filter(Boolean))];
+    const keys = collectQueueKeysForId(dir, queueNum);
+    const toWrite = keys.length ? keys : [String(queueNum).trim()];
+    for (const k of toWrite) {
+        queueAssignmentOverrides[k] = uniq;
+    }
+    saveQueueOverrides();
+}
+
+/**
+ * Merge phonebook queue members with persisted supervisor edits (live-status payload).
+ * @param {Record<string, object>} dir
+ */
+function mergeQueueAssignments(dir) {
+    const base = buildQueueAssignmentsFromDirectory(dir);
+    const out = { ...base };
+    for (const [k, list] of Object.entries(queueAssignmentOverrides)) {
+        if (Array.isArray(list)) out[k] = [...list];
+    }
+    return out;
+}
+
+loadQueueOverrides();
+
 async function updatePhonebook() {
     try {
         const response = await axios.get(CONTACTS_URL);
@@ -338,9 +436,55 @@ app.get('/api/live-status', async (req, res) => {
         if (subscriberStatus != null) {
             payload.subscriberStatus = { ok: true, onlineByNumber: subscriberStatus };
         }
-        payload.queueAssignments = buildQueueAssignmentsFromDirectory(directoryPayload);
+        payload.queueAssignments = mergeQueueAssignments(directoryPayload);
         res.json(payload);
     } catch (e) { res.status(500).send("Error"); }
+});
+
+/**
+ * Supervisor: add/remove queue member (SIP login id). Persists to queue_assignment_overrides.json;
+ * optionally forwards to Hero if HERO_QUEUE_MANAGE_ACTION is set.
+ */
+app.post('/api/queues/manage', async (req, res) => {
+    try {
+        const { queueNumber, agentLogin, action } = req.body || {};
+        const qn = queueNumber != null ? String(queueNumber).trim() : '';
+        const login = agentLogin != null ? String(agentLogin).trim() : '';
+        if (!qn || !login || !['add', 'remove'].includes(action)) {
+            return res.status(400).json({ success: false, error: 'Invalid queueNumber, agentLogin, or action' });
+        }
+        const dir = phonebookCache;
+        let list = getEffectiveQueueMembers(dir, qn);
+        if (action === 'add') {
+            if (!list.includes(login)) list.push(login);
+        } else {
+            list = list.filter((x) => String(x).trim() !== login);
+        }
+        setQueueMembersOverride(dir, qn, list);
+
+        if (HERO_QUEUE_MANAGE_ACTION && HERO_API_TOKEN) {
+            try {
+                await axios.post(
+                    HERO_API_URL,
+                    {
+                        token: HERO_API_TOKEN,
+                        action: HERO_QUEUE_MANAGE_ACTION,
+                        Queue: qn,
+                        Agent: login,
+                        Operation: action,
+                    },
+                    { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
+                );
+            } catch (e) {
+                console.warn('HERO_QUEUE_MANAGE_ACTION forward failed (local override still saved):', e.message);
+            }
+        }
+
+        return res.json({ success: true });
+    } catch (e) {
+        console.error('/api/queues/manage', e);
+        return res.status(500).json({ success: false, error: e.message || 'Server error' });
+    }
 });
 
 app.get('/api/recordings', async (req, res) => {

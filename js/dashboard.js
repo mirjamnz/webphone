@@ -1,9 +1,10 @@
 /**
  * Live supervisor dashboard (active calls, directory-driven Agents/Queues, recordings).
- * Last modified: 2026-03-24 — agents + recordings rows match queue dark-card style.
+ * Last modified: 2026-03-24 — queue Manage modal + POST /api/queues/manage.
  */
 
 import { resolveAgentSipTargets } from './agent-sip-targets.js';
+import { CONFIG } from './config.js';
 
 /** @param {unknown} subscriberStatus */
 function parseSubscriberOnlineDict(subscriberStatus) {
@@ -61,6 +62,22 @@ function escapeAttr(s) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;')
         .replace(/</g, '&lt;');
+}
+
+/** True if assignedList contains this login (exact or last-8-digit match). */
+function listHasQueueMember(assignedList, loginId) {
+    const want = String(loginId).trim();
+    if (!want || !Array.isArray(assignedList)) return false;
+    const dWant = want.replace(/\D/g, '');
+    for (const x of assignedList) {
+        const s = String(x).trim();
+        if (s === want) return true;
+        if (dWant.length >= 8) {
+            const dx = s.replace(/\D/g, '');
+            if (dx.slice(-8) === dWant.slice(-8)) return true;
+        }
+    }
+    return false;
 }
 
 export class DashboardManager {
@@ -176,6 +193,8 @@ export class DashboardManager {
                 window.openDashboardAudio(url, btn.dataset.recTitle || '', btn.dataset.recDate || '');
             });
         }
+
+        this.initQueueManageListeners();
     }
 
     start() {
@@ -392,8 +411,13 @@ export class DashboardManager {
             return `
             <div class="supervisor-queue-card" style="background: #1e2129; border-radius: 8px; margin-bottom: 24px; overflow: hidden; border: 1px solid #2a2e39; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
                 <div style="padding: 16px 20px; background: #252933; border-bottom: 1px solid #2a2e39; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px;">
-                    <div>
-                        <h3 style="margin: 0 0 4px 0; font-size: 1.25rem; font-weight: 600; color: #ffffff;">${escapeHtml(data.name || 'Queue')}</h3>
+                    <div style="flex: 1;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px; flex-wrap: wrap;">
+                            <h3 style="margin: 0; font-size: 1.25rem; font-weight: 600; color: #ffffff;">${escapeHtml(data.name || 'Queue')}</h3>
+                            <button type="button" class="btn-manage-queue" data-qname="${escapeAttr(data.name || 'Queue')}" data-qnum="${escapeAttr(ext)}" style="background: transparent; border: 1px solid rgba(52, 152, 219, 0.3); color: #3498db; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; cursor: pointer; transition: all 0.2s;">
+                                <i class="fa-solid fa-gear"></i> Manage
+                            </button>
+                        </div>
                         <span style="font-size: 0.85rem; color: #8b949e; font-family: monospace;">Ext: ${escapeHtml(ext)}</span>
                     </div>
                     <div style="display: flex; gap: 12px;">
@@ -410,6 +434,141 @@ export class DashboardManager {
                 </div>
             </div>`;
         }).join('');
+    }
+
+    /**
+     * Manage queue members: open modal, checklist, POST /api/queues/manage on checkbox change.
+     */
+    initQueueManageListeners() {
+        const queuesList = this.ui.lists.queues;
+        const modal = document.getElementById('queueManageModal');
+        const closeBtn = document.getElementById('btnCloseQueueManage');
+        const searchInput = document.getElementById('queueAgentSearch');
+        const checklist = document.getElementById('queueAgentChecklist');
+        const loadingBox = document.getElementById('queueManageLoading');
+
+        if (!queuesList || !modal) return;
+
+        const closeModal = () => {
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
+        };
+        if (closeBtn) {
+            closeBtn.onclick = closeModal;
+        }
+        modal.onclick = (e) => {
+            if (e.target === modal) closeModal();
+        };
+
+        if (searchInput) {
+            searchInput.oninput = (e) => {
+                const term = /** @type {HTMLInputElement} */ (e.target).value.toLowerCase();
+                const rows = checklist ? checklist.querySelectorAll('.agent-checkbox-row') : [];
+                rows.forEach((row) => {
+                    const el = /** @type {HTMLElement} */ (row);
+                    el.style.display = el.innerText.toLowerCase().includes(term) ? 'flex' : 'none';
+                });
+            };
+        }
+
+        if (!queuesList.dataset.manageDelegated) {
+            queuesList.dataset.manageDelegated = 'true';
+            queuesList.addEventListener('click', (e) => {
+                const btn = e.target.closest('.btn-manage-queue');
+                if (!btn) return;
+                const qName = btn.getAttribute('data-qname') || 'Queue';
+                const qNum = btn.getAttribute('data-qnum') || '';
+                const titleEl = document.getElementById('manageQueueTitle');
+                const extEl = document.getElementById('manageQueueExt');
+                if (titleEl) titleEl.textContent = `Manage: ${qName}`;
+                if (extEl) extEl.textContent = `Ext: ${qNum}`;
+                if (searchInput) searchInput.value = '';
+                this._renderManageChecklist(qNum, checklist, loadingBox);
+                modal.classList.remove('hidden');
+                modal.style.display = 'flex';
+            });
+        }
+    }
+
+    /**
+     * @param {string} queueNumber
+     * @param {HTMLElement | null} container
+     * @param {HTMLElement | null} loadingBox
+     */
+    _renderManageChecklist(queueNumber, container, loadingBox) {
+        if (!container) return;
+        container.innerHTML =
+            '<div style="text-align:center; color:#8b949e; padding:20px;"><i class="fa-solid fa-spinner fa-spin"></i> Loading agents...</div>';
+
+        const agents = Object.entries(this.directory).filter(([, d]) => d && d.type === 'agent');
+
+        fetch(this.apiUrl)
+            .then((r) => r.json())
+            .then((data) => {
+                const assignments = data.queueAssignments || {};
+                const assignedRaw = assignments[queueNumber] || [];
+                const assignedList = Array.isArray(assignedRaw) ? assignedRaw : [];
+
+                container.innerHTML = agents
+                    .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || '', undefined, { sensitivity: 'base' }))
+                    .map(([dirKey, d]) => {
+                        const { presenceUser } = resolveAgentSipTargets(dirKey, d);
+                        const agentLoginId = presenceUser;
+                        const isAssigned = listHasQueueMember(assignedList, agentLoginId);
+
+                        return `
+                <label class="agent-checkbox-row">
+                    <div class="agent-checkbox-info">
+                        <span class="agent-checkbox-name">${escapeHtml(d.name || 'Unknown')}</span>
+                        <span class="agent-checkbox-ext">Ext: ${escapeHtml(d.extension || dirKey)} | ID: ${escapeHtml(agentLoginId)}</span>
+                    </div>
+                    <input type="checkbox" class="queue-agent-cb" data-qnum="${escapeAttr(queueNumber)}" data-login="${escapeAttr(agentLoginId)}" ${isAssigned ? 'checked' : ''}>
+                </label>
+                `;
+                    })
+                    .join('');
+
+                container.querySelectorAll('.queue-agent-cb').forEach((cb) => {
+                    cb.addEventListener('change', async (e) => {
+                        const box = /** @type {HTMLInputElement} */ (e.target);
+                        const action = box.checked ? 'add' : 'remove';
+                        const qNum = box.getAttribute('data-qnum');
+                        const loginId = box.getAttribute('data-login');
+                        if (!qNum || !loginId) return;
+
+                        box.disabled = true;
+                        if (loadingBox) loadingBox.classList.remove('hidden');
+
+                        try {
+                            const res = await fetch(`${CONFIG.API_BASE_URL}/queues/manage`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ queueNumber: qNum, agentLogin: loginId, action }),
+                            });
+                            const result = await res.json().catch(() => ({}));
+
+                            if (!result.success) {
+                                window.alert(`Failed to ${action} agent: ${result.error || res.statusText || 'Unknown error'}`);
+                                box.checked = !box.checked;
+                            } else {
+                                await this.fetchData();
+                            }
+                        } catch (err) {
+                            console.error(err);
+                            window.alert('Network error occurred.');
+                            box.checked = !box.checked;
+                        } finally {
+                            box.disabled = false;
+                            if (loadingBox) loadingBox.classList.add('hidden');
+                        }
+                    });
+                });
+            })
+            .catch((err) => {
+                console.error(err);
+                container.innerHTML =
+                    '<div style="color:#e74c3c; padding:10px;">Failed to load assignments.</div>';
+            });
     }
 
     /**
