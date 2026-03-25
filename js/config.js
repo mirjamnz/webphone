@@ -1,5 +1,5 @@
 /**
- * js/config.js - SIP defaults (Contact: transport=ws, ob for outbound).
+ * js/config.js - SIP defaults (Contact: transport=ws).
  */
 export const CONFIG = { 
     DEFAULT_DOMAIN: "wss.hero.co.nz",
@@ -16,7 +16,7 @@ export const CONFIG = {
         hackIpInContact: false, // Use .invalid / UUID Contact, not local IP in Contact
         // --- Improve Registration Success Rate ---
         hackAllowUnregisteredOptionTags: true,
-        contactParams: { transport: 'ws', ob: '' },
+        contactParams: { transport: 'ws' },
         // Standard ICE negotiation
         sessionDescriptionHandlerFactoryOptions: {
             peerConnectionConfiguration: {

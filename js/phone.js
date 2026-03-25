@@ -1,7 +1,7 @@
 /**
  * js/phone.js
- * Simplified SIP/WebRTC Engine with RFC 5626 (Outbound), ICE Fixes, and Heartbeat Watchdog
- * Last modified: 2026-03-24 — preserve Kamailio alias= in REGISTER 2xx Contact sanitization.
+ * Simplified SIP/WebRTC Engine with ICE fixes and REGISTER 2xx Contact sanitization
+ * Last modified: 2026-03-24 — REGISTER 2xx: strip all Contact lines, inject one binding with alias=.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
@@ -81,8 +81,8 @@ function pickRegisterContactBinding(bindings, contactUserName, instanceUuid) {
 }
 
 /**
- * Kamailio 5.6 REGISTER 2xx can include multiple bindings, alias=, and received="sip:..." on Contact.
- * SIP.js 0.21 may drop the raw header; if we simplify, we must keep *our* binding (instance / freshest), not the first.
+ * Kamailio REGISTER 2xx may send multiple Contact headers (multi-device). SIP.js 0.21 can choke or
+ * match the wrong row. Use case: replace *all* Contact lines with one sanitized binding (+ alias=).
  * @param {string} raw
  * @param {string} contactUserName
  * @param {string} instanceUuid
@@ -96,26 +96,33 @@ function sanitizeKamailioRegister2xxContact(raw, contactUserName, instanceUuid) 
     const cseq = raw.match(/^CSeq:\s*\d+\s+(\S+)/im);
     if (!cseq || String(cseq[1]).toUpperCase() !== 'REGISTER') return raw;
 
-    const contactLineMatch = raw.match(/^Contact:\s*([^\r\n]+)/im);
-    if (!contactLineMatch) return raw;
-    const contactValue = contactLineMatch[1];
+    // Grab ALL contact headers (Kamailio often sends multiple if multiple devices are registered)
+    const contactLines = raw.match(/^Contact:\s*([^\r\n]+)/igm);
+    if (!contactLines) return raw;
 
-    const bindings = parseSipContactBindings(contactValue);
+    // Join them to parse bindings and find our specific device
+    const allContacts = contactLines.map((line) => line.replace(/^Contact:\s*/i, '')).join(', ');
+    const bindings = parseSipContactBindings(allContacts);
     if (!bindings.length) return raw;
 
     const chosen = pickRegisterContactBinding(bindings, contactUserName, instanceUuid);
     if (!chosen) return raw;
 
     const expHdr = raw.match(/^Expires:\s*(\d+)/im);
-    const expires =
-        chosen.expires > 0 ? String(chosen.expires) : expHdr ? expHdr[1] : '120';
+    const expires = chosen.expires > 0 ? String(chosen.expires) : expHdr ? expHdr[1] : '120';
 
-    // Preserve alias= from Kamailio so routing uses the open WebSocket (NAT path).
+    // Extract the alias parameter if Kamailio provided one
     const aliasMatch = chosen.inner.match(/;(alias=[^;>]+)/i);
     const aliasStr = aliasMatch ? `;${aliasMatch[1]}` : '';
 
-    const replacement = `Contact: <sip:${chosen.userHost};transport=ws${aliasStr}>;expires=${expires}`;
-    return raw.replace(/^Contact:\s*[^\r\n]+/im, replacement);
+    // THE FIX: Completely obliterate ALL existing Contact headers from the raw string
+    let cleanRaw = raw.replace(/^Contact:[^\r\n]+\r?\n/igm, '');
+
+    // Inject our single, perfectly formatted Contact header right after the CSeq line
+    const replacement = `Contact: <sip:${chosen.userHost};transport=ws${aliasStr}>;expires=${expires}\r\n`;
+    cleanRaw = cleanRaw.replace(/^(CSeq:[^\r\n]+\r?\n)/im, `$1${replacement}`);
+
+    return cleanRaw;
 }
 
 // Helper to maintain a consistent endpoint ID across page reloads
@@ -257,8 +264,6 @@ export class PhoneEngine {
             contactName: anonymousContactName,
             contactParams: {
                 transport: 'ws',
-                ob: '', // RFC 5626 outbound; SIP.js emits ;ob on Contact
-                '+sip.ice': undefined,
                 'reg-id': 1,
                 '+sip.instance': `"urn:uuid:${uuid}"`
             },
