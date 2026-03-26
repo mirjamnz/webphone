@@ -1,7 +1,7 @@
 /**
  * js/phone.js
  * Fortified SIP/WebRTC Engine for strict Kamailio PBX environments.
- * Last modified: 2026-03-26 — Transport patch: inbound URI sanitize + outbound Contact ;ob inject.
+ * Last modified: 2026-03-26 — Outbound Contact: URI params inside <>; reg-id / +sip.instance outside.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
@@ -299,19 +299,42 @@ export class PhoneEngine {
             };
         }
 
-        // 2. PATCH OUTBOUND MESSAGES (Inject ;ob so Kamailio can route ACKs via outbound flow)
+        // 2. PATCH OUTBOUND MESSAGES (RFC 3261 Contact: URI vs header parameters)
         const innerSend = transport.send;
         if (typeof innerSend === 'function') {
             transport.send = (msg) => {
                 let outMsg = msg;
                 if (typeof outMsg === 'string') {
-                    // RFC 5626: ;ob belongs on the Contact URI for outbound flow
-                    outMsg = outMsg.replace(/^(Contact:\s*<[^>]+?)(>)/im, (match, p1, p2) => {
-                        if (!p1.includes(';ob')) {
-                            return `${p1};ob${p2}`;
+                    // Same-line only: (.*) would swallow the rest of the SIP message
+                    outMsg = outMsg.replace(
+                        /^(Contact:\s*<)([^>]+)(>)([^\r\n]*)/im,
+                        (match, openBracket, uriInner, closeBracket, headerParams) => {
+                            let cleanUri = uriInner;
+                            let cleanParams = headerParams;
+
+                            const instanceMatch = cleanUri.match(/(;\+sip\.instance="?[^";>]+"?)/i);
+                            if (instanceMatch) {
+                                cleanUri = cleanUri.replace(instanceMatch[1], '');
+                                if (!cleanParams.includes('+sip.instance')) {
+                                    cleanParams += instanceMatch[1];
+                                }
+                            }
+
+                            const regIdMatch = cleanUri.match(/(;reg-id=\d+)/i);
+                            if (regIdMatch) {
+                                cleanUri = cleanUri.replace(regIdMatch[1], '');
+                                if (!cleanParams.includes('reg-id')) {
+                                    cleanParams += regIdMatch[1];
+                                }
+                            }
+
+                            if (!cleanUri.includes(';ob')) {
+                                cleanUri += ';ob';
+                            }
+
+                            return `${openBracket}${cleanUri}${closeBracket}${cleanParams}`;
                         }
-                        return match;
-                    });
+                    );
                 }
                 return innerSend.call(transport, outMsg);
             };
