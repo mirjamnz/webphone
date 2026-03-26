@@ -1,7 +1,7 @@
 /**
  * js/phone.js
  * Simplified SIP/WebRTC Engine with ICE fixes and REGISTER 2xx Contact sanitization
- * Last modified: 2026-03-24 — Transport patch: REGISTER 2xx sanitize + strip +sip.instance from INVITE Request-URI.
+ * Last modified: 2026-03-24 — Transport patch: REGISTER 2xx sanitize + strip +sip.instance from request first line.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
@@ -309,8 +309,8 @@ export class PhoneEngine {
     }
 
     /**
-     * Wrap transport.onMessage: fix Kamailio REGISTER 2xx multi-Contact, and relax INVITE Request-URI
-     * so SIP.js does not choke on ;+sip.instance="…" on the first line.
+     * Wrap transport.onMessage: fix Kamailio REGISTER 2xx multi-Contact; strip ;+sip.instance="…" from
+     * the Request-URI first line on all incoming requests (INVITE, ACK, BYE, CANCEL, …), not responses.
      * @param {*} ua - SIP.js UserAgent instance
      * @param {string} contactUserName
      * @param {string} instanceUuid
@@ -325,15 +325,19 @@ export class PhoneEngine {
         transport.onMessage = (msg) => {
             let cleanMsg = msg;
 
+            // 1. REGISTER 2xx multi-Contact / Kamailio quirks
             cleanMsg = sanitizeKamailioRegister2xxContact(cleanMsg, contactUserName, instanceUuid);
 
-            if (typeof cleanMsg === 'string' && cleanMsg.startsWith('INVITE sip:')) {
+            // 2. Incoming requests only: Request-URI may carry ;+sip.instance="…" (strict parsers choke)
+            if (typeof cleanMsg === 'string') {
                 const firstNewline = cleanMsg.indexOf('\n');
                 if (firstNewline > -1) {
                     let firstLine = cleanMsg.substring(0, firstNewline);
-                    const rest = cleanMsg.substring(firstNewline);
-                    firstLine = firstLine.replace(/;\+sip\.instance="[^"]+"/gi, '');
-                    cleanMsg = firstLine + rest;
+                    if (!firstLine.startsWith('SIP/2.0')) {
+                        const rest = cleanMsg.substring(firstNewline);
+                        firstLine = firstLine.replace(/;\+sip\.instance="[^"]+"/gi, '');
+                        cleanMsg = firstLine + rest;
+                    }
                 }
             }
 
