@@ -1,13 +1,12 @@
 /**
  * js/phone.js
- * Simplified SIP/WebRTC Engine with ICE fixes and REGISTER 2xx Contact sanitization
- * Last modified: 2026-03-24 — hackIpInContact + hackViaTcp; transport patch comments for +sip.instance strip.
+ * Fortified SIP/WebRTC Engine for strict Kamailio PBX environments.
+ * Last modified: 2026-03-26 — Two-way transport patch: inbound sanitize + outbound Contact alias inject.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
 /**
  * Re-INVITE SDP tweak after hold (sendonly/inactive → sendrecv).
- * @param {{ sdp?: string, type: string }} description
  */
 function unholdModifier(description) {
     if (!description.sdp || !description.type) {
@@ -19,11 +18,6 @@ function unholdModifier(description) {
     return Promise.resolve({ sdp, type: description.type });
 }
 
-/**
- * Parse each <sip:…> binding in a Contact header value (comma-separated list).
- * @param {string} contactValue
- * @returns {{ userHost: string, expires: number, inner: string }[]}
- */
 function parseSipContactBindings(contactValue) {
     const bindings = [];
     let i = 0;
@@ -32,7 +26,6 @@ function parseSipContactBindings(contactValue) {
         if (lt === -1) break;
         const gt = contactValue.indexOf('>', lt);
         if (gt === -1) break;
-        // Bytes after "<sip:" up to ">" are the URI (user@host;params) without the "sip:" prefix.
         const inner = contactValue.slice(lt + 5, gt);
         const userHost = inner.split(';')[0].trim();
         const afterGt = contactValue.slice(gt + 1);
@@ -50,13 +43,6 @@ function parseSipContactBindings(contactValue) {
     return bindings;
 }
 
-/**
- * Pick the binding for *this* UA. Kamailio lists old + new contacts; first URI is often stale (wrong host).
- * SIP.js Registerer rejects 200 if Contact does not "point to us" (onAccept → "No Contact header pointing to us").
- * @param {{ userHost: string, expires: number, inner: string }[]} bindings
- * @param {string} contactUserName - anonymous Contact user (e.g. rs2g5mcz)
- * @param {string} instanceUuid - persistent +sip.instance uuid without urn prefix
- */
 function pickRegisterContactBinding(bindings, contactUserName, instanceUuid) {
     if (!bindings.length) return null;
     if (instanceUuid) {
@@ -80,14 +66,6 @@ function pickRegisterContactBinding(bindings, contactUserName, instanceUuid) {
     return bindings.reduce((a, b) => (b.expires > a.expires ? b : a));
 }
 
-/**
- * Kamailio REGISTER 2xx may send multiple Contact headers (multi-device). SIP.js 0.21 can choke or
- * match the wrong row. Use case: replace *all* Contact lines with one sanitized binding (+ alias=).
- * @param {string} raw
- * @param {string} contactUserName
- * @param {string} instanceUuid
- * @returns {string}
- */
 function sanitizeKamailioRegister2xxContact(raw, contactUserName, instanceUuid) {
     if (typeof raw !== 'string' || raw.length < 12) return raw;
     if (!raw.startsWith('SIP/2.0')) return raw;
@@ -96,11 +74,9 @@ function sanitizeKamailioRegister2xxContact(raw, contactUserName, instanceUuid) 
     const cseq = raw.match(/^CSeq:\s*\d+\s+(\S+)/im);
     if (!cseq || String(cseq[1]).toUpperCase() !== 'REGISTER') return raw;
 
-    // Grab ALL contact headers (Kamailio often sends multiple if multiple devices are registered)
     const contactLines = raw.match(/^Contact:\s*([^\r\n]+)/igm);
     if (!contactLines) return raw;
 
-    // Join them to parse bindings and find our specific device
     const allContacts = contactLines.map((line) => line.replace(/^Contact:\s*/i, '')).join(', ');
     const bindings = parseSipContactBindings(allContacts);
     if (!bindings.length) return raw;
@@ -111,21 +87,16 @@ function sanitizeKamailioRegister2xxContact(raw, contactUserName, instanceUuid) 
     const expHdr = raw.match(/^Expires:\s*(\d+)/im);
     const expires = chosen.expires > 0 ? String(chosen.expires) : expHdr ? expHdr[1] : '120';
 
-    // Extract the alias parameter if Kamailio provided one
     const aliasMatch = chosen.inner.match(/;(alias=[^;>]+)/i);
     const aliasStr = aliasMatch ? `;${aliasMatch[1]}` : '';
 
-    // THE FIX: Completely obliterate ALL existing Contact headers from the raw string
     let cleanRaw = raw.replace(/^Contact:[^\r\n]+\r?\n/igm, '');
-
-    // Inject our single, perfectly formatted Contact header right after the CSeq line
     const replacement = `Contact: <sip:${chosen.userHost};transport=ws${aliasStr}>;expires=${expires}\r\n`;
     cleanRaw = cleanRaw.replace(/^(CSeq:[^\r\n]+\r?\n)/im, `$1${replacement}`);
 
     return cleanRaw;
 }
 
-// Helper to maintain a consistent endpoint ID across page reloads
 function getPersistentInstanceId() {
     let instanceId = localStorage.getItem('sip_instance_id');
     if (!instanceId) {
@@ -138,19 +109,15 @@ function getPersistentInstanceId() {
     return instanceId; 
 }
 
-// Helper to maintain a stable anonymous contact name across page reloads
 function getPersistentContactName() {
     let contactName = localStorage.getItem('sip_contact_name');
     if (!contactName) {
-        // Generate a random 8-character string once, then save it permanently
         contactName = Math.random().toString(36).substring(2, 10);
         localStorage.setItem('sip_contact_name', contactName);
     }
     return contactName;
 }
 
-// Helper to fetch dynamic TURN credentials from Hero's API
-// (Keep this here for when you deploy to a production domain)
 async function fetchTurnCredentials(username, domain) {
     try {
         console.log('Fetching TURN credentials...');
@@ -161,9 +128,7 @@ async function fetchTurnCredentials(username, domain) {
         });
         
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        
         const data = await response.json();
-        console.log('TURN credentials received:', data);
         return data; 
     } catch (error) {
         console.error('Failed to fetch TURN credentials:', error);
@@ -181,29 +146,23 @@ export class PhoneEngine {
         this.session = null;
         this.registerer = null;
         
-        // --- Registration Tuning ---
         this.registererOptions = {
-            expires: 120, // Lowered from 600 to 120 seconds (2 minutes)
-            refreshFrequency: 90 // Refresh at 90% of expiry (every ~108 seconds)
+            expires: 120,
+            refreshFrequency: 90
         };
         
-        // --- NEW: Watchdog Variables ---
         this.intentionalDisconnect = false;
         this.reconnectTimer = null;
         this.lastRegisterTime = Date.now();
         this.lastHeartbeat = Date.now();
         this.heartbeatInterval = null;
-        this.maxHeartbeatDelay = 30000; // 30 seconds
-        this.heartbeatThreshold = 10000; // 10 seconds
+        this.maxHeartbeatDelay = 30000;
+        this.heartbeatThreshold = 10000;
         this.lastKnownState = null;
         this.lastKnownDomain = null;
-        /** Local mic muted (outbound audio tracks disabled). */
         this.localMuted = false;
-        /** SIP hold (re-INVITE sendonly) active. */
         this.onHold = false;
 
-        // Page Visibility: embedded Chromium (Cursor Simple Browser) throttles setInterval while unfocused;
-        // without this, lastHeartbeat stalls and we false-trigger reconnect → lost registration.
         this._onVisibilityForHeartbeat = () => {
             if (typeof document !== 'undefined' && !document.hidden) {
                 this.lastHeartbeat = Date.now();
@@ -214,7 +173,7 @@ export class PhoneEngine {
     async connect() {
         this.intentionalDisconnect = false;
         if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-        this.stopHeartbeat(); // Clear any zombie intervals
+        this.stopHeartbeat();
 
         if (this.userAgent) await this.disconnect();
 
@@ -224,39 +183,19 @@ export class PhoneEngine {
         
         if (!user || !pass) return;
 
-        // ======================================================================
-        // ⚠️ TEMPORARY HARDCODE FOR LOCAL DEV (CORS BYPASS) ⚠️
-        // KEEP THIS HERE WHILE TESTING ON LOCALHOST TO ENSURE AUDIO CONNECTS
-        // ======================================================================
+        // Note: Update these credentials if you deploy to production
         const iceServers = [{
             urls: "turns:wss.hero.co.nz:5349",
-            username: "801061400032",   // <--- PASTE YOUR FULL TURN USERNAME HERE
-            credential: "X2dyA5H4" // <--- PASTE YOUR FULL TURN CREDENTIAL HERE
+            username: "801061400032",
+            credential: "X2dyA5H4"
         }];
-        // ======================================================================
-
-        /* --- UNCOMMENT THIS BLOCK FOR PRODUCTION DEPLOYMENT ---
-        const turnData = await fetchTurnCredentials(user, domain);
-        const iceServers = [];
-        if (turnData && turnData.urls) {
-            iceServers.push({
-                urls: turnData.urls,
-                username: turnData.username,
-                credential: turnData.credential
-            });
-        } else {
-            console.warn("No TURN credentials loaded. Media may fail if behind strict NAT.");
-        }
-        ------------------------------------------------------ */
 
         const uri = SIP.UserAgent.makeURI(`sip:${user}@${this.lastKnownDomain}`);
         const uuid = getPersistentInstanceId();
         const anonymousContactName = getPersistentContactName();
 
-        // Spread SIP defaults first, then override so saved wssUrl / TURN ICE are not clobbered by a trailing spread.
         const options = {
             ...this.config.SIP_OPTIONS,
-            // CONFIG may set register: true; we use an explicit Registerer below — avoid double REGISTER.
             register: false,
             uri: uri,
             authorizationUsername: user,
@@ -268,19 +207,18 @@ export class PhoneEngine {
                 '+sip.instance': `"urn:uuid:${uuid}"`
             },
             hackAllowUnregisteredOptionTags: true,
-            hackIpInContact: true,
-            hackViaTcp: true,
+            hackIpInContact: false, // Must be false to use .invalid
             forceRport: true,
             sipExtensionExtraSupported: ['outbound'],
 
-            // THE FIX: Explicitly enforce WebSocket keep-alives at the UA root (seconds)
+            // ENFORCE WEBSOCKET KEEP-ALIVES
             keepAliveInterval: 15,
             keepAliveDebounce: 10,
 
             transportOptions: {
                 ...this.config.SIP_OPTIONS.transportOptions,
                 server: this.settings.get('wssUrl') || this.config.SIP_OPTIONS.transportOptions.server,
-                keepAliveInterval: 15 // Redundant with root, safe to keep for transport layer
+                keepAliveInterval: 15
             },
             sessionDescriptionHandlerFactoryOptions: {
                 peerConnectionConfiguration: { iceServers: iceServers }
@@ -310,54 +248,84 @@ export class PhoneEngine {
         };
 
         this.userAgent = new SIP.UserAgent(options);
-        // Patch before start() so the first 401/200 REGISTER responses never hit an unpatched onMessage.
         this._patchTransportKamailioRegisterContact(this.userAgent, anonymousContactName, uuid);
         await this.userAgent.start();
     }
 
     /**
-     * Wrap transport.onMessage: fix Kamailio REGISTER 2xx multi-Contact; strip ;+sip.instance="…" from
-     * the Request-URI first line on all incoming requests (INVITE, ACK, BYE, CANCEL, …), not responses.
-     * @param {*} ua - SIP.js UserAgent instance
-     * @param {string} contactUserName
-     * @param {string} instanceUuid
+     * Wrap transport to sanitize incoming Kamailio messages and inject alias into outbound Contact.
      */
     _patchTransportKamailioRegisterContact(ua, contactUserName, instanceUuid) {
         const transport = ua?.transport;
-        if (!transport || transport._kamailioRegisterContactPatched) return;
-        const inner = transport.onMessage;
-        if (typeof inner !== 'function') return;
-        transport._kamailioRegisterContactPatched = true;
+        if (!transport || transport._kamailioPatched) return;
+        transport._kamailioPatched = true;
 
-        transport.onMessage = (msg) => {
-            let cleanMsg = msg;
+        let currentAlias = '';
 
-            // 1. REGISTER 2xx multi-Contact / Kamailio quirks
-            cleanMsg = sanitizeKamailioRegister2xxContact(cleanMsg, contactUserName, instanceUuid);
+        // 1. PATCH INCOMING MESSAGES
+        const innerOnMessage = transport.onMessage;
+        if (typeof innerOnMessage === 'function') {
+            transport.onMessage = (msg) => {
+                let cleanMsg = msg;
 
-            // 2. NEW FIX: Prevent SIP.js crashing on ALL incoming messages!
-            // Kamailio sometimes sends the +sip.instance parameter (with illegal double quotes)
-            // in the Request-URI of INVITE, ACK, BYE, and CANCEL messages.
-            if (typeof cleanMsg === 'string') {
-                const firstNewline = cleanMsg.indexOf('\n');
-                if (firstNewline > -1) {
-                    let firstLine = cleanMsg.substring(0, firstNewline);
+                if (typeof cleanMsg === 'string') {
+                    // Fix REGISTER 2xx multi-Contact
+                    cleanMsg = sanitizeKamailioRegister2xxContact(cleanMsg, contactUserName, instanceUuid);
 
-                    // If it's a SIP Request (not a "SIP/2.0 200 OK" response)
-                    if (!firstLine.startsWith('SIP/2.0')) {
-                        const rest = cleanMsg.substring(firstNewline);
-                        // Strip ;+sip.instance="anything" from the first line
-                        firstLine = firstLine.replace(/;\+sip\.instance="[^"]+"/gi, '');
-                        cleanMsg = firstLine + rest;
+                    // Extract the NAT alias Kamailio assigned to us
+                    const cseqMatch = cleanMsg.match(/^CSeq:\s*\d+\s+REGISTER/im);
+                    if (cseqMatch && cleanMsg.startsWith('SIP/2.0 200 OK')) {
+                        const aliasMatch = cleanMsg.match(/;(alias=[^;>\s]+)/i);
+                        if (aliasMatch) currentAlias = aliasMatch[1];
+                    }
+
+                    // Strip illegal quotes from incoming URIs
+                    const parts = cleanMsg.split('\r\n\r\n');
+                    if (parts.length > 0) {
+                        let headers = parts[0];
+                        headers = headers
+                            .split('\n')
+                            .map((line) => {
+                                if (
+                                    line.startsWith('INVITE sip:') ||
+                                    line.startsWith('ACK sip:') ||
+                                    line.startsWith('BYE sip:') ||
+                                    line.startsWith('CANCEL sip:') ||
+                                    line.startsWith('To:') ||
+                                    line.startsWith('From:') ||
+                                    line.startsWith('Contact:')
+                                ) {
+                                    return line.replace(/"(urn:uuid:[^"]+)"/g, '$1');
+                                }
+                                return line;
+                            })
+                            .join('\n');
+                        parts[0] = headers;
+                        cleanMsg = parts.join('\r\n\r\n');
                     }
                 }
-            }
+                innerOnMessage.call(transport, cleanMsg);
+            };
+        }
 
-            inner(cleanMsg);
-        };
+        // 2. PATCH OUTBOUND MESSAGES
+        const innerSend = transport.send;
+        if (typeof innerSend === 'function') {
+            transport.send = (msg) => {
+                let outMsg = msg;
+                if (currentAlias && typeof outMsg === 'string') {
+                    outMsg = outMsg.replace(/^(Contact:\s*<[^>]+)(>)/im, (match, p1, p2) => {
+                        if (!p1.includes('alias=')) {
+                            return `${p1};${currentAlias}${p2}`;
+                        }
+                        return match;
+                    });
+                }
+                return innerSend.call(transport, outMsg);
+            };
+        }
     }
 
-    // --- NEW: Custom Heartbeat Methods ---
     startHeartbeat() {
         if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
         this.lastHeartbeat = Date.now();
@@ -369,15 +337,11 @@ export class PhoneEngine {
 
         this.heartbeatInterval = setInterval(() => {
             if (this.intentionalDisconnect) return this.stopHeartbeat();
-
             const now = Date.now();
-            // While hidden, timers are unreliable; do not treat a gap as network death.
             if (typeof document !== 'undefined' && document.hidden) {
                 this.lastHeartbeat = now;
                 return;
             }
-
-            // If the browser slept or the network froze, 'now' will jump far ahead
             if (now - this.lastHeartbeat > this.maxHeartbeatDelay) {
                 console.error("💀 Heartbeat timeout! Network likely froze. Forcing reconnect...");
                 this.connect();
@@ -434,16 +398,11 @@ export class PhoneEngine {
                 this.callbacks.onStatus('Unregistered');
                 this.lastKnownState = 'Unregistered';
                 
-                // --- THE FIX: The Sledgehammer ---
                 if (!this.intentionalDisconnect) {
-                    console.warn("⚠️ Registration dropped (408 Timeout). Socket is likely poisoned. Forcing full TCP/WS teardown in 3s...");
-                    
-                    // Clear the old instance completely
+                    console.warn("⚠️ Registration dropped (408 Timeout). Forcing full TCP/WS teardown in 3s...");
                     if (this.userAgent) {
                         this.userAgent.stop().catch(()=>{});
                     }
-                    
-                    // Call connect() instead of register() to get a brand new WebSocket and Call-ID
                     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
                     this.reconnectTimer = setTimeout(() => this.connect(), 3000);
                 }
@@ -460,33 +419,26 @@ export class PhoneEngine {
     handleIncomingCall(invitation) {
         const remoteUser = invitation.remoteIdentity.uri.user;
 
-        // Provisional 180 Ringing — keeps upstream (e.g. Kamailio/Hero) from timing out before the user answers
         try {
-            invitation.progress(); // SIP 180 Ringing
+            invitation.progress();
             console.log('📨 Sent 180 Ringing to Kamailio');
         } catch (e) {
             console.warn('Could not send early progress:', e);
         }
 
         this.audio.startRinging();
-
-        // Register state listener immediately so transitions are not missed before answer
         this.setupSession(invitation);
 
         this.callbacks.onIncoming(
             remoteUser,
             async () => {
-                // Answer
                 this.audio.stopRinging();
-
                 const options = {
                     sessionDescriptionHandlerOptions: {
                         constraints: { audio: true, video: false },
-                        // Early-offer: do not block 200 OK on full ICE gathering
-                        iceGatheringTimeout: 100
+                        iceGatheringTimeout: 100 // Force early-offer to accept immediately
                     }
                 };
-
                 try {
                     await invitation.accept(options);
                     console.log('✅ Call accepted successfully.');
@@ -495,7 +447,6 @@ export class PhoneEngine {
                 }
             },
             () => {
-                // Reject
                 this.audio.stopRinging();
                 invitation.reject();
             }
@@ -552,11 +503,6 @@ export class PhoneEngine {
         }
     }
 
-    /**
-     * Blind transfer (SIP REFER) — use case: send the connected party to another extension.
-     * @param {string} destination - extension or user part (domain from settings)
-     * @returns {boolean}
-     */
     blindTransfer(destination) {
         if (!this.session || this.session.state !== SIP.SessionState.Established) {
             console.warn('blindTransfer: no established session');
@@ -583,10 +529,6 @@ export class PhoneEngine {
         }
     }
 
-    /**
-     * Mute / unmute local microphone (WebRTC senders). Does not change SIP signaling.
-     * @returns {boolean} true if mic is muted after toggle
-     */
     toggleMute() {
         if (!this.session || this.session.state !== SIP.SessionState.Established) {
             return this.localMuted;
@@ -604,10 +546,6 @@ export class PhoneEngine {
         return this.localMuted;
     }
 
-    /**
-     * Hold / resume via re-INVITE (RFC 3264 sendonly vs negotiated sendrecv).
-     * @returns {Promise<boolean>} true if call is on hold after toggle
-     */
     async toggleHold() {
         if (!this.session || this.session.state !== SIP.SessionState.Established) {
             return this.onHold;
@@ -630,6 +568,7 @@ export class PhoneEngine {
             return this.onHold;
         }
     }
+
     isCallActive() { return this.session && this.session.state === SIP.SessionState.Established; }
     sendDTMF(tone) { if (this.session) this.session.dtmf(tone); }
 }
