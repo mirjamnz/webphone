@@ -1,7 +1,7 @@
 /**
  * js/phone.js
  * Simplified SIP/WebRTC Engine with ICE fixes and REGISTER 2xx Contact sanitization
- * Last modified: 2026-03-24 — Incoming: setupSession before UI; accept with short iceGatheringTimeout.
+ * Last modified: 2026-03-24 — Incoming: invitation.progress() (180) immediately; then ring / setupSession.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
@@ -427,6 +427,15 @@ export class PhoneEngine {
     
     handleIncomingCall(invitation) {
         const remoteUser = invitation.remoteIdentity.uri.user;
+
+        // Provisional 180 Ringing — keeps upstream (e.g. Kamailio/Hero) from timing out before the user answers
+        try {
+            invitation.progress(); // SIP 180 Ringing
+            console.log('📨 Sent 180 Ringing to Kamailio');
+        } catch (e) {
+            console.warn('Could not send early progress:', e);
+        }
+
         this.audio.startRinging();
 
         // Register state listener immediately so transitions are not missed before answer
