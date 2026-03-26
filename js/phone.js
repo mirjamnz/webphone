@@ -1,7 +1,7 @@
 /**
  * js/phone.js
  * Simplified SIP/WebRTC Engine with ICE fixes and REGISTER 2xx Contact sanitization
- * Last modified: 2026-03-24 — connect(): keepAliveInterval/keepAliveDebounce on UA + transportOptions.
+ * Last modified: 2026-03-24 — hackIpInContact + hackViaTcp; transport patch comments for +sip.instance strip.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
@@ -268,18 +268,19 @@ export class PhoneEngine {
                 '+sip.instance': `"urn:uuid:${uuid}"`
             },
             hackAllowUnregisteredOptionTags: true,
-            hackIpInContact: false, // Standard Contact (.invalid), not local IP
+            hackIpInContact: true,
+            hackViaTcp: true,
             forceRport: true,
             sipExtensionExtraSupported: ['outbound'],
 
-            // WebSocket keep-alives at UA root (seconds) — also set under transportOptions below
+            // THE FIX: Explicitly enforce WebSocket keep-alives at the UA root (seconds)
             keepAliveInterval: 15,
             keepAliveDebounce: 10,
 
             transportOptions: {
                 ...this.config.SIP_OPTIONS.transportOptions,
                 server: this.settings.get('wssUrl') || this.config.SIP_OPTIONS.transportOptions.server,
-                keepAliveInterval: 15
+                keepAliveInterval: 15 // Redundant with root, safe to keep for transport layer
             },
             sessionDescriptionHandlerFactoryOptions: {
                 peerConnectionConfiguration: { iceServers: iceServers }
@@ -334,13 +335,18 @@ export class PhoneEngine {
             // 1. REGISTER 2xx multi-Contact / Kamailio quirks
             cleanMsg = sanitizeKamailioRegister2xxContact(cleanMsg, contactUserName, instanceUuid);
 
-            // 2. Incoming requests only: Request-URI may carry ;+sip.instance="…" (strict parsers choke)
+            // 2. NEW FIX: Prevent SIP.js crashing on ALL incoming messages!
+            // Kamailio sometimes sends the +sip.instance parameter (with illegal double quotes)
+            // in the Request-URI of INVITE, ACK, BYE, and CANCEL messages.
             if (typeof cleanMsg === 'string') {
                 const firstNewline = cleanMsg.indexOf('\n');
                 if (firstNewline > -1) {
                     let firstLine = cleanMsg.substring(0, firstNewline);
+
+                    // If it's a SIP Request (not a "SIP/2.0 200 OK" response)
                     if (!firstLine.startsWith('SIP/2.0')) {
                         const rest = cleanMsg.substring(firstNewline);
+                        // Strip ;+sip.instance="anything" from the first line
                         firstLine = firstLine.replace(/;\+sip\.instance="[^"]+"/gi, '');
                         cleanMsg = firstLine + rest;
                     }
