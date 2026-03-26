@@ -1,7 +1,7 @@
 /**
  * js/phone.js
  * Simplified SIP/WebRTC Engine with ICE fixes and REGISTER 2xx Contact sanitization
- * Last modified: 2026-03-24 — Incoming: invitation.progress() (180) immediately; then ring / setupSession.
+ * Last modified: 2026-03-24 — Transport patch: REGISTER 2xx sanitize + strip +sip.instance from INVITE Request-URI.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
@@ -309,7 +309,8 @@ export class PhoneEngine {
     }
 
     /**
-     * Wrap transport.onMessage so REGISTER 2xx responses parse (see sanitizeKamailioRegister2xxContact).
+     * Wrap transport.onMessage: fix Kamailio REGISTER 2xx multi-Contact, and relax INVITE Request-URI
+     * so SIP.js does not choke on ;+sip.instance="…" on the first line.
      * @param {*} ua - SIP.js UserAgent instance
      * @param {string} contactUserName
      * @param {string} instanceUuid
@@ -320,9 +321,24 @@ export class PhoneEngine {
         const inner = transport.onMessage;
         if (typeof inner !== 'function') return;
         transport._kamailioRegisterContactPatched = true;
-        // Preserve arrow-function `this` from UserAgent (do not use inner.call(transport, …)).
-        transport.onMessage = (msg) =>
-            inner(sanitizeKamailioRegister2xxContact(msg, contactUserName, instanceUuid));
+
+        transport.onMessage = (msg) => {
+            let cleanMsg = msg;
+
+            cleanMsg = sanitizeKamailioRegister2xxContact(cleanMsg, contactUserName, instanceUuid);
+
+            if (typeof cleanMsg === 'string' && cleanMsg.startsWith('INVITE sip:')) {
+                const firstNewline = cleanMsg.indexOf('\n');
+                if (firstNewline > -1) {
+                    let firstLine = cleanMsg.substring(0, firstNewline);
+                    const rest = cleanMsg.substring(firstNewline);
+                    firstLine = firstLine.replace(/;\+sip\.instance="[^"]+"/gi, '');
+                    cleanMsg = firstLine + rest;
+                }
+            }
+
+            inner(cleanMsg);
+        };
     }
 
     // --- NEW: Custom Heartbeat Methods ---
