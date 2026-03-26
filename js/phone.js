@@ -1,7 +1,7 @@
 /**
  * js/phone.js
  * Fortified SIP/WebRTC Engine for strict Kamailio PBX environments.
- * Last modified: 2026-03-26 — Two-way transport patch: inbound sanitize + outbound Contact alias inject.
+ * Last modified: 2026-03-26 — Transport patch: inbound URI sanitize + outbound Contact ;ob inject.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
@@ -253,16 +253,14 @@ export class PhoneEngine {
     }
 
     /**
-     * Wrap transport to sanitize incoming Kamailio messages and inject alias into outbound Contact.
+     * Wrap transport to safely sanitize incoming Kamailio messages and inject outbound params.
      */
     _patchTransportKamailioRegisterContact(ua, contactUserName, instanceUuid) {
         const transport = ua?.transport;
         if (!transport || transport._kamailioPatched) return;
         transport._kamailioPatched = true;
 
-        let currentAlias = '';
-
-        // 1. PATCH INCOMING MESSAGES
+        // 1. PATCH INCOMING MESSAGES (Sanitize URIs to prevent SIP.js crashing)
         const innerOnMessage = transport.onMessage;
         if (typeof innerOnMessage === 'function') {
             transport.onMessage = (msg) => {
@@ -271,13 +269,6 @@ export class PhoneEngine {
                 if (typeof cleanMsg === 'string') {
                     // Fix REGISTER 2xx multi-Contact
                     cleanMsg = sanitizeKamailioRegister2xxContact(cleanMsg, contactUserName, instanceUuid);
-
-                    // Extract the NAT alias Kamailio assigned to us
-                    const cseqMatch = cleanMsg.match(/^CSeq:\s*\d+\s+REGISTER/im);
-                    if (cseqMatch && cleanMsg.startsWith('SIP/2.0 200 OK')) {
-                        const aliasMatch = cleanMsg.match(/;(alias=[^;>\s]+)/i);
-                        if (aliasMatch) currentAlias = aliasMatch[1];
-                    }
 
                     // Strip illegal quotes from incoming URIs
                     const parts = cleanMsg.split('\r\n\r\n');
@@ -308,15 +299,16 @@ export class PhoneEngine {
             };
         }
 
-        // 2. PATCH OUTBOUND MESSAGES
+        // 2. PATCH OUTBOUND MESSAGES (Inject ;ob so Kamailio can route ACKs via outbound flow)
         const innerSend = transport.send;
         if (typeof innerSend === 'function') {
             transport.send = (msg) => {
                 let outMsg = msg;
-                if (currentAlias && typeof outMsg === 'string') {
-                    outMsg = outMsg.replace(/^(Contact:\s*<[^>]+)(>)/im, (match, p1, p2) => {
-                        if (!p1.includes('alias=')) {
-                            return `${p1};${currentAlias}${p2}`;
+                if (typeof outMsg === 'string') {
+                    // RFC 5626: ;ob belongs on the Contact URI for outbound flow
+                    outMsg = outMsg.replace(/^(Contact:\s*<[^>]+?)(>)/im, (match, p1, p2) => {
+                        if (!p1.includes(';ob')) {
+                            return `${p1};ob${p2}`;
                         }
                         return match;
                     });
