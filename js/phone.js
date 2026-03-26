@@ -1,7 +1,7 @@
 /**
  * js/phone.js
  * Simplified SIP/WebRTC Engine with ICE fixes and REGISTER 2xx Contact sanitization
- * Last modified: 2026-03-24 — Transport patch: REGISTER 2xx sanitize + strip +sip.instance from request first line.
+ * Last modified: 2026-03-24 — connect(): keepAliveInterval/keepAliveDebounce on UA + transportOptions.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
@@ -271,9 +271,15 @@ export class PhoneEngine {
             hackIpInContact: false, // Standard Contact (.invalid), not local IP
             forceRport: true,
             sipExtensionExtraSupported: ['outbound'],
+
+            // WebSocket keep-alives at UA root (seconds) — also set under transportOptions below
+            keepAliveInterval: 15,
+            keepAliveDebounce: 10,
+
             transportOptions: {
                 ...this.config.SIP_OPTIONS.transportOptions,
-                server: this.settings.get('wssUrl') || this.config.SIP_OPTIONS.transportOptions.server
+                server: this.settings.get('wssUrl') || this.config.SIP_OPTIONS.transportOptions.server,
+                keepAliveInterval: 15
             },
             sessionDescriptionHandlerFactoryOptions: {
                 peerConnectionConfiguration: { iceServers: iceServers }
