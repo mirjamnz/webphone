@@ -1,7 +1,7 @@
 /**
  * js/phone.js
  * Simplified SIP/WebRTC Engine with ICE fixes and REGISTER 2xx Contact sanitization
- * Last modified: 2026-03-24 — REGISTER 2xx: strip all Contact lines, inject one binding with alias=.
+ * Last modified: 2026-03-24 — Incoming: setupSession before UI; accept with short iceGatheringTimeout.
  */
 import * as SIP from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm';
 
@@ -428,20 +428,33 @@ export class PhoneEngine {
     handleIncomingCall(invitation) {
         const remoteUser = invitation.remoteIdentity.uri.user;
         this.audio.startRinging();
-        
-        this.callbacks.onIncoming(remoteUser, 
-            () => { // Answer
+
+        // Register state listener immediately so transitions are not missed before answer
+        this.setupSession(invitation);
+
+        this.callbacks.onIncoming(
+            remoteUser,
+            async () => {
+                // Answer
                 this.audio.stopRinging();
+
                 const options = {
                     sessionDescriptionHandlerOptions: {
-                        constraints: { audio: true, video: false }
+                        constraints: { audio: true, video: false },
+                        // Early-offer: do not block 200 OK on full ICE gathering
+                        iceGatheringTimeout: 100
                     }
                 };
-                invitation.accept(options).then(() => {
-                    this.setupSession(invitation);
-                });
+
+                try {
+                    await invitation.accept(options);
+                    console.log('✅ Call accepted successfully.');
+                } catch (e) {
+                    console.error('❌ Failed to accept call:', e);
+                }
             },
-            () => { // Reject
+            () => {
+                // Reject
                 this.audio.stopRinging();
                 invitation.reject();
             }
